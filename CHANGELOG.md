@@ -9,7 +9,15 @@
 
 ## 0.1.1 – 2026-07-18
 
-- Buildfehler im UMU-Smoke-Test behoben.
-- Ursache: `umu-run --version` wurde während des Docker-Builds als `root` ausgeführt; UMU beendet Root-Ausführungen absichtlich mit Exit-Code 1.
+- Ersten Buildfehler im UMU-Smoke-Test behoben.
+- `umu-run --version` wird nicht mehr während des Docker-Builds als `root` ausgeführt; UMU lehnt Root-Ausführungen absichtlich ab.
 - Smoke-Test wird jetzt nach `USER container` unter demselben unprivilegierten Benutzer ausgeführt, den Pelican zur Laufzeit nutzt.
 - Smoke-Test prüft zusätzlich Benutzer-ID und `HOME=/home/container`.
+
+## 0.1.2 – 2026-07-18
+
+- Zweiten, unabhängigen Smoke-Test-Fehler behoben.
+- Falsche Annahme entfernt, dass `/home/container/steamcmd/steamcmd.sh` bereits im unveränderlichen Runtime-Image vorhanden sein müsse.
+- SteamCMD wird von Pelican im persistenten Servervolume bereitgestellt und deshalb nur geprüft, wenn dieses Volume tatsächlich eingehängt ist.
+- Image-eigene Komponenten `rcon`, `umu-run`, `bwrap`, Python und GE-Proton bleiben verpflichtende Buildprüfungen.
+- Alle Smoke-Test-Phasen geben jetzt vor der Prüfung einen eindeutigen Diagnoseschritt aus.
