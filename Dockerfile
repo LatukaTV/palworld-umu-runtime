@@ -90,8 +90,10 @@ RUN set -eux; \
         /home/container/.umu
 
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
-RUN chmod 0755 /usr/local/bin/palworld-umu-smoke-test \
-    && /usr/local/bin/palworld-umu-smoke-test
+RUN chmod 0755 /usr/local/bin/palworld-umu-smoke-test
 
+# UMU intentionally refuses to run as root. Execute the smoke test under the
+# same unprivileged account that Pelican uses at runtime.
 USER container
 WORKDIR /home/container
+RUN /usr/local/bin/palworld-umu-smoke-test
