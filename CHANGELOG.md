@@ -24,9 +24,17 @@
 
 ## 0.1.3 – 2026-07-18
 
-- GitHub-Actions-Lauf `29656832033` als aktuellen Lauf auf Commit `bd0ef59b9eeafee5079a327a64bbaca09446b452` verifiziert.
-- Buildzeit-Prüfung und tatsächliche CLI-Laufzeitprüfung getrennt.
-- Dockerfile führt nur noch deterministische Datei-, Benutzer-, Symlink- und Versionsprüfungen aus.
-- GitHub Actions baut zuerst ein lokales Kandidatenimage und führt darin UMU und RCON aus.
-- GHCR-Tags werden erst veröffentlicht, wenn der Kandidaten-Smoke-Test bestanden wurde.
-- Fehlerausgaben enthalten künftig Prüfphase, Befehl, Zeile und Exit-Code.
+- Docker-Buildprüfung und Laufzeitprüfung getrennt.
+- Statischer Image-Preflight ergänzt.
+- GitHub Actions baut zuerst ein lokales Kandidatenimage, prüft es und veröffentlicht erst danach GHCR-Tags.
+- Fehlerausgaben enthalten Zeile, Exit-Code und fehlgeschlagenen Befehl.
+
+## 0.1.4 – 2026-07-18
+
+- Den statischen Image-Preflight vollständig aus der Docker-Buildschicht entfernt.
+- Ursache: BuildKit reduziert Fehler aus `RUN /usr/local/bin/palworld-umu-image-preflight` in der Annotation auf einen undifferenzierten Exit-Code 1.
+- Kandidatenimage wird jetzt zuerst vollständig gebaut und lokal geladen.
+- Image-Preflight und Runtime-Smoke-Test laufen anschließend als getrennte Actions-Schritte.
+- Beide Testschritte schreiben ihre vollständige Ausgabe zusätzlich in die GitHub-Actions-Schrittzusammenfassung.
+- `HOME` und `USER` werden im Runtime-Image ausdrücklich gesetzt.
+- Der Image-Preflight protokolliert Architektur, Benutzer, Pfade, Programme, Symlinks und GE-Proton-Version vor der jeweiligen Prüfung.
