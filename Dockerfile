@@ -25,8 +25,9 @@ RUN set -eux; \
     test "${arch}" = "amd64"
 
 # Runtime dependencies used by UMU's pressure-vessel/bubblewrap launcher.
-# The inherited SteamCMD image already supplies SteamCMD, rcon and the
-# required Steam 32-bit runtime libraries.
+# The inherited Pelican SteamCMD base supplies rcon, its standard entrypoint
+# and the required Steam 32-bit runtime libraries. SteamCMD itself is later
+# installed into Pelican's persistent server volume.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -89,11 +90,16 @@ RUN set -eux; \
         /home/container/.local \
         /home/container/.umu
 
+COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
-RUN chmod 0755 /usr/local/bin/palworld-umu-smoke-test
+RUN chmod 0755 \
+        /usr/local/bin/palworld-umu-image-preflight \
+        /usr/local/bin/palworld-umu-smoke-test
 
-# UMU intentionally refuses to run as root. Execute the smoke test under the
-# same unprivileged account that Pelican uses at runtime.
 USER container
 WORKDIR /home/container
-RUN /usr/local/bin/palworld-umu-smoke-test
+
+# The Docker build only performs deterministic file and dependency checks.
+# Executing UMU and RCON happens in a separate GitHub Actions step before any
+# image tag is published.
+RUN /usr/local/bin/palworld-umu-image-preflight
