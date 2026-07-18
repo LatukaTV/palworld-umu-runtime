@@ -21,3 +21,12 @@
 - SteamCMD wird von Pelican im persistenten Servervolume bereitgestellt und deshalb nur geprüft, wenn dieses Volume tatsächlich eingehängt ist.
 - Image-eigene Komponenten `rcon`, `umu-run`, `bwrap`, Python und GE-Proton bleiben verpflichtende Buildprüfungen.
 - Alle Smoke-Test-Phasen geben jetzt vor der Prüfung einen eindeutigen Diagnoseschritt aus.
+
+## 0.1.3 – 2026-07-18
+
+- GitHub-Actions-Lauf `29656832033` als aktuellen Lauf auf Commit `bd0ef59b9eeafee5079a327a64bbaca09446b452` verifiziert.
+- Buildzeit-Prüfung und tatsächliche CLI-Laufzeitprüfung getrennt.
+- Dockerfile führt nur noch deterministische Datei-, Benutzer-, Symlink- und Versionsprüfungen aus.
+- GitHub Actions baut zuerst ein lokales Kandidatenimage und führt darin UMU und RCON aus.
+- GHCR-Tags werden erst veröffentlicht, wenn der Kandidaten-Smoke-Test bestanden wurde.
+- Fehlerausgaben enthalten künftig Prüfphase, Befehl, Zeile und Exit-Code.
