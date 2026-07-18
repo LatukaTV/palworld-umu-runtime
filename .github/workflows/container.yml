@@ -60,12 +60,45 @@ jobs:
           provenance: false
           sbom: false
 
-      - name: Run candidate runtime smoke test
+      - name: Run candidate image preflight
+        shell: bash
         run: |
           set -Eeuo pipefail
+          log_file="${RUNNER_TEMP}/palworld-umu-image-preflight.log"
+          set +e
+          docker run --rm \
+            --entrypoint /usr/local/bin/palworld-umu-image-preflight \
+            "${LOCAL_IMAGE}" 2>&1 | tee "${log_file}"
+          rc=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Candidate image preflight'
+            echo
+            echo '```text'
+            cat "${log_file}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${rc}"
+
+      - name: Run candidate runtime smoke test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          log_file="${RUNNER_TEMP}/palworld-umu-runtime-smoke.log"
+          set +e
           docker run --rm \
             --entrypoint /usr/local/bin/palworld-umu-smoke-test \
-            "${LOCAL_IMAGE}"
+            "${LOCAL_IMAGE}" 2>&1 | tee "${log_file}"
+          rc=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '## Candidate runtime smoke test'
+            echo
+            echo '```text'
+            cat "${log_file}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${rc}"
 
       - name: Publish verified linux/amd64 image
         id: publish
@@ -87,6 +120,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           docker pull "${IMAGE}"
+          docker run --rm \
+            --entrypoint /usr/local/bin/palworld-umu-image-preflight \
+            "${IMAGE}"
           docker run --rm \
             --entrypoint /usr/local/bin/palworld-umu-smoke-test \
             "${IMAGE}"
