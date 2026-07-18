@@ -7,6 +7,8 @@ fail() {
 }
 
 [[ "$(uname -m)" == "x86_64" ]] || fail "Nur linux/amd64 wird unterstützt."
+[[ "$(id -u)" -ne 0 ]] || fail "UMU-Smoke-Test darf nicht als root laufen."
+[[ "${HOME:-}" == "/home/container" ]] || fail "Unerwartetes HOME: ${HOME:-<leer>}"
 
 command -v steamcmd >/dev/null 2>&1 || \
     [[ -x /home/container/steamcmd/steamcmd.sh ]] || \
@@ -29,4 +31,4 @@ grep -Fq 'CURRENT_PREFIX_VERSION="GE-Proton11-1"' /opt/ge-proton/proton || \
 python3 --version
 umu-run --version
 
-printf '[runtime-smoke] OK: UMU 1.4.0 und GE-Proton11-1 sind installiert.\n'
+printf '[runtime-smoke] OK: UMU 1.4.0 und GE-Proton11-1 sind als container-Benutzer installiert.\n'
