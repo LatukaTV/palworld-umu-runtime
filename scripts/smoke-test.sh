@@ -15,7 +15,9 @@ run_check() {
     shift
 
     step "$label"
-    if ! "$@"; then
+    if "$@"; then
+        return 0
+    else
         local rc=$?
         fail "${label} fehlgeschlagen (Exit ${rc}): $*"
     fi
