@@ -18,6 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PROTONPATH=/opt/ge-proton
 ENV XDG_DATA_HOME=/home/container/.local/share
 ENV XDG_CACHE_HOME=/home/container/.cache
+ENV HOME=/home/container
+ENV USER=container
 ENV PATH=/opt/umu:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
@@ -25,9 +27,8 @@ RUN set -eux; \
     test "${arch}" = "amd64"
 
 # Runtime dependencies used by UMU's pressure-vessel/bubblewrap launcher.
-# The inherited Pelican SteamCMD base supplies rcon, its standard entrypoint
-# and the required Steam 32-bit runtime libraries. SteamCMD itself is later
-# installed into Pelican's persistent server volume.
+# The inherited SteamCMD image supplies the Pelican entrypoint, RCON and the
+# required Steam 32-bit runtime libraries.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -99,7 +100,6 @@ RUN chmod 0755 \
 USER container
 WORKDIR /home/container
 
-# The Docker build only performs deterministic file and dependency checks.
-# Executing UMU and RCON happens in a separate GitHub Actions step before any
-# image tag is published.
-RUN /usr/local/bin/palworld-umu-image-preflight
+# Validation runs against the completed candidate container in GitHub Actions.
+# Keeping it outside Docker build layers preserves the complete failing output
+# and prevents an opaque BuildKit "RUN ... exit code 1" annotation.
