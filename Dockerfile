@@ -51,13 +51,15 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Install the architecture-independent UMU zipapp and verify the exact
-# upstream release digest before extraction.
+# upstream release digest before extraction. The upstream tar currently stores
+# umu-run without executable bits, so the runtime image must set them explicitly.
 RUN set -eux; \
     curl --fail --location --retry 5 --retry-delay 2 \
         "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar" \
         --output /tmp/umu-launcher.tar; \
     printf '%s  %s\n' "${UMU_SHA256}" /tmp/umu-launcher.tar | sha256sum --check --strict -; \
     tar --extract --file /tmp/umu-launcher.tar --directory /opt; \
+    chmod 0755 /opt/umu/umu-run; \
     test -x /opt/umu/umu-run; \
     ln -s /opt/umu/umu-run /usr/local/bin/umu-run; \
     rm /tmp/umu-launcher.tar
