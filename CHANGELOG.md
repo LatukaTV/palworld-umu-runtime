@@ -38,3 +38,10 @@
 - Beide Testschritte schreiben ihre vollständige Ausgabe zusätzlich in die GitHub-Actions-Schrittzusammenfassung.
 - `HOME` und `USER` werden im Runtime-Image ausdrücklich gesetzt.
 - Der Image-Preflight protokolliert Architektur, Benutzer, Pfade, Programme, Symlinks und GE-Proton-Version vor der jeweiligen Prüfung.
+
+## 0.1.5 – 2026-07-18
+
+- Konkrete Ursache aus dem separaten Image-Preflight behoben.
+- Das offizielle UMU-1.4.0-Zipapp-Archiv enthält `/opt/umu/umu-run` im gebauten Image mit Modus `0644` statt ausführbar.
+- Der Docker-Build setzt deshalb nach verifizierter Extraktion ausdrücklich `chmod 0755 /opt/umu/umu-run`.
+- Die Ausführbarkeitsprüfung bleibt direkt danach erhalten, sodass ein erneuter Berechtigungsfehler den Build früh und eindeutig stoppt.
