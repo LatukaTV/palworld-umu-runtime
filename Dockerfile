@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 USER root
 
 ARG TARGETARCH
-ARG WINEHQ_VERSION=11.13~trixie-1
+ARG WINEHQ_VERSION=11.13~bookworm-1
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/container
@@ -20,6 +20,7 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN set -eux; \
     arch="${TARGETARCH:-amd64}"; \
     test "${arch}" = "amd64"; \
+    test "$(. /etc/os-release; printf '%s' "${VERSION_CODENAME}")" = "bookworm"; \
     dpkg --add-architecture i386; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -32,11 +33,11 @@ RUN set -eux; \
     printf '%s\n' \
         'Types: deb' \
         'URIs: https://dl.winehq.org/wine-builds/debian' \
-        'Suites: trixie' \
+        'Suites: bookworm' \
         'Components: main' \
         'Architectures: amd64 i386' \
         'Signed-By: /etc/apt/keyrings/winehq-archive.key' \
-        > /etc/apt/sources.list.d/winehq-trixie.sources; \
+        > /etc/apt/sources.list.d/winehq-bookworm.sources; \
     apt-get update; \
     apt-get install -y --install-recommends \
         "winehq-devel=${WINEHQ_VERSION}" \
