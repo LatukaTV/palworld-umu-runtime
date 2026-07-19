@@ -1,246 +1,717 @@
 #!/usr/bin/env python3
-import argparse,base64,json,os,re,shutil,signal,subprocess,sys,threading,time
+import argparse
+import base64
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tarfile
+import threading
+import time
 from pathlib import Path
-from urllib.error import HTTPError,URLError
-from urllib.request import Request,urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-VERSION="0.2.8"
-HOME=Path("/home/container")
-EXE=HOME/"Pal/Binaries/Linux/PalServer-Linux-Shipping"
-PARSER=HOME/"PalworldServerConfigParser"
-DEFAULT_INI=HOME/"DefaultPalWorldSettings.ini"
-CONFIG_DIR=HOME/"Pal/Saved/Config/LinuxServer"
-CONFIG=CONFIG_DIR/"PalWorldSettings.ini"
-WINDOWS_CONFIG=HOME/"Pal/Saved/Config/WindowsServer/PalWorldSettings.ini"
-SAVE_ROOT=HOME/"Pal/Saved"
-SAVE_GAMES=SAVE_ROOT/"SaveGames"
-BACKUP_ROOT=HOME/".loryvant-backups"
-REST_HOST="127.0.0.1"
-READY_TIMEOUT=120
-REST_TIMEOUT=3
-SECRET_LINE=re.compile(r"^(.*Password.*(?:value:|with value:)).*$",re.I)
+VERSION = "0.2.9"
+HOME = Path("/home/container")
+SERVER_ROOT = HOME / "ModdedServer"
+EXE = SERVER_ROOT / "Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
+WIN64 = EXE.parent
+PARSER = HOME / "PalworldServerConfigParser"
+DEFAULT_INI = HOME / "DefaultPalWorldSettings.ini"
+SAVE_ROOT = HOME / "Pal/Saved"
+SAVE_GAMES = SAVE_ROOT / "SaveGames"
+CONFIG_DIR = SAVE_ROOT / "Config/WindowsServer"
+CONFIG = CONFIG_DIR / "PalWorldSettings.ini"
+LINUX_CONFIG = SAVE_ROOT / "Config/LinuxServer/PalWorldSettings.ini"
+SERVER_SAVED = SERVER_ROOT / "Pal/Saved"
+MODS_ROOT = HOME / "Mods"
+SERVER_MODS = SERVER_ROOT / "Mods"
+BACKUP_ROOT = HOME / ".loryvant-backups"
+MOD_BACKUP_ROOT = BACKUP_ROOT / "mods"
+WINE_PREFIX = HOME / ".wine-palworld-modded"
+LOG_DIR = HOME / "logs/loryvant-palworld-modded"
+XDG_DIR = Path("/tmp/loryvant-wine-xdg")
+DISPLAY = ":99"
+X_SOCKET = Path("/tmp/.X11-unix/X99")
+X_LOCK = Path("/tmp/.X99-lock")
+X_LOG = LOG_DIR / "xvfb.log"
+REST_HOST = "127.0.0.1"
+READY_TIMEOUT = 300
+REST_TIMEOUT = 3
+SECRET_LINE = re.compile(r"^(.*Password.*(?:value:|with value:)).*$", re.I)
+DLL_CANDIDATES = ("d3d9", "winmm", "version", "xinput1_3", "dxgi")
 
-server=None
-stop_event=threading.Event()
-rest_lock=threading.Lock()
+server = None
+xvfb = None
+stop_event = threading.Event()
+rest_lock = threading.Lock()
 
-def out(message): print(f"[Loryvant] {message}",flush=True)
-def warn(message): print(f"[Loryvant] WARNUNG: {message}",file=sys.stderr,flush=True)
-def err(message): print(f"[Loryvant] FEHLER: {message}",file=sys.stderr,flush=True)
-def fail(message,code): err(message);raise SystemExit(code)
-def enabled(name,default="0"): return os.environ.get(name,default).strip().lower() in {"1","true","yes","on"}
 
-def need_file(path,label,code,executable=False):
-    if not path.is_file() or executable and not os.access(path,os.X_OK): fail(f"{label} fehlt: {path}",code)
+def out(message):
+    print(f"[Loryvant] {message}", flush=True)
+
+
+def warn(message):
+    print(f"[Loryvant] WARNUNG: {message}", file=sys.stderr, flush=True)
+
+
+def err(message):
+    print(f"[Loryvant] FEHLER: {message}", file=sys.stderr, flush=True)
+
+
+def fail(message, code):
+    err(message)
+    raise SystemExit(code)
+
+
+def enabled(name, default="0"):
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def need_command(name, code):
+    if shutil.which(name) is None:
+        fail(f"{name} fehlt im Containerimage.", code)
+
+
+def need_file(path, label, code, executable=False):
+    if not path.is_file() or executable and not os.access(path, os.X_OK):
+        fail(f"{label} fehlt: {path}", code)
+
 
 def admin_password():
-    value=os.environ.get("ADMIN_PASSWORD","")
-    if not value: fail("ADMIN_PASSWORD ist leer.",61)
+    value = os.environ.get("ADMIN_PASSWORD", "")
+    if not value:
+        fail("ADMIN_PASSWORD ist leer.", 61)
     return value
+
 
 def rest_port():
-    value=os.environ.get("REST_API_PORT","8212").strip()
-    if not value.isdigit() or not 1<=int(value)<=65535: fail(f"REST_API_PORT ist ungültig: {value}",63)
+    value = os.environ.get("REST_API_PORT", "8212").strip()
+    if not value.isdigit() or not 1 <= int(value) <= 65535:
+        fail(f"REST_API_PORT ist ungültig: {value}", 63)
     return value
 
-def environment():
-    env=os.environ.copy()
-    paths=[str(HOME/"linux64"),str(HOME/"Pal/Binaries/Linux")]
-    if env.get("LD_LIBRARY_PATH","").strip(): paths.append(env["LD_LIBRARY_PATH"])
-    env.update({
-        "HOME":str(HOME),"USER":"container","SteamAppId":"2394010","SteamGameId":"2394010",
-        "LD_LIBRARY_PATH":":".join(paths),"REST_API_ENABLED":"True","REST_API_PORT":rest_port(),
-        "RCON_ENABLE":"False","LOG_FORMAT_TYPE":"Text",
-    })
-    for key in (
-        "PROTONPATH","WINEPREFIX","WINEDLLOVERRIDES","RUNTIMEPATH","UMU_NO_RUNTIME",
-        "UMU_NO_PROTON","UMU_CONTAINER_NSENTER","PROTON_LOG","PROTON_LOG_DIR","UMU_LOG",
-        "DISPLAY","WAYLAND_DISPLAY","XDG_SESSION_TYPE","SDL_VIDEODRIVER",
-    ): env.pop(key,None)
-    return env
 
 def prepare_directories():
-    for path in (CONFIG_DIR,SAVE_GAMES,BACKUP_ROOT): path.mkdir(parents=True,exist_ok=True)
+    for path in (
+        SERVER_ROOT,
+        CONFIG_DIR,
+        SAVE_GAMES,
+        MODS_ROOT / "Workshop",
+        MODS_ROOT / "ManagedMods",
+        MODS_ROOT / "NativeMods",
+        BACKUP_ROOT,
+        MOD_BACKUP_ROOT,
+        WINE_PREFIX.parent,
+        LOG_DIR,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def replace_with_symlink(path, target, label):
+    target.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        if path.resolve() == target.resolve():
+            return
+        path.unlink()
+    elif path.exists():
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        backup = BACKUP_ROOT / f"{label}-{stamp}"
+        shutil.move(str(path), str(backup))
+        out(f"Vorhandener Pfad wurde gesichert: {backup}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(target, target_is_directory=True)
+
+
+def prepare_shared_paths():
+    replace_with_symlink(SERVER_SAVED, SAVE_ROOT, "ModdedServer-Saved")
+    replace_with_symlink(SERVER_MODS, MODS_ROOT, "ModdedServer-Mods")
+
 
 def migrate_configuration():
-    if CONFIG.is_file() and CONFIG.stat().st_size>0: return
-    if WINDOWS_CONFIG.is_file() and WINDOWS_CONFIG.stat().st_size>0:
-        stamp=time.strftime("%Y%m%dT%H%M%SZ",time.gmtime())
-        backup=BACKUP_ROOT/f"PalWorldSettings-WindowsServer-{stamp}.ini"
-        shutil.copy2(WINDOWS_CONFIG,backup);shutil.copy2(WINDOWS_CONFIG,CONFIG)
-        out("WindowsServer-Konfiguration wurde nach LinuxServer übernommen.")
+    if CONFIG.is_file() and CONFIG.stat().st_size > 0:
+        return
+    if LINUX_CONFIG.is_file() and LINUX_CONFIG.stat().st_size > 0:
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        backup = BACKUP_ROOT / f"PalWorldSettings-LinuxServer-{stamp}.ini"
+        shutil.copy2(LINUX_CONFIG, backup)
+        shutil.copy2(LINUX_CONFIG, CONFIG)
+        out("LinuxServer-Konfiguration wurde nach WindowsServer übernommen.")
         out(f"Konfigurationssicherung: {backup}")
         return
-    shutil.copy2(DEFAULT_INI,CONFIG)
-    out("LinuxServer/PalWorldSettings.ini wurde aus der Vorlage angelegt.")
+    shutil.copy2(DEFAULT_INI, CONFIG)
+    out("WindowsServer/PalWorldSettings.ini wurde aus der Vorlage angelegt.")
+
+
+def dll_overrides():
+    configured = os.environ.get("MOD_DLL_OVERRIDES", "auto").strip()
+    if configured.lower() not in {"", "auto"}:
+        names = []
+        for raw in configured.split(","):
+            name = raw.strip().lower().removesuffix(".dll")
+            if re.fullmatch(r"[a-z0-9_]+", name):
+                names.append(name)
+        return ";".join(f"{name}=n,b" for name in dict.fromkeys(names))
+    names = [name for name in DLL_CANDIDATES if (WIN64 / f"{name}.dll").is_file()]
+    return ";".join(f"{name}=n,b" for name in names)
+
+
+def environment():
+    env = os.environ.copy()
+    env.update({
+        "HOME": str(HOME),
+        "USER": "container",
+        "WINEPREFIX": str(WINE_PREFIX),
+        "WINEARCH": "win64",
+        "WINEDEBUG": os.environ.get("WINE_DEBUG", "-all"),
+        "DISPLAY": DISPLAY,
+        "XDG_RUNTIME_DIR": str(XDG_DIR),
+        "REST_API_ENABLED": "True",
+        "REST_API_PORT": rest_port(),
+        "RCON_ENABLE": "False",
+        "LOG_FORMAT_TYPE": "Text",
+    })
+    overrides = dll_overrides()
+    if overrides:
+        env["WINEDLLOVERRIDES"] = overrides
+    else:
+        env.pop("WINEDLLOVERRIDES", None)
+    for key in (
+        "PROTONPATH",
+        "RUNTIMEPATH",
+        "UMU_NO_RUNTIME",
+        "UMU_NO_PROTON",
+        "UMU_CONTAINER_NSENTER",
+        "PROTON_LOG",
+        "PROTON_LOG_DIR",
+        "UMU_LOG",
+        "WAYLAND_DISPLAY",
+    ):
+        env.pop(key, None)
+    return env
+
 
 def update_server(env):
-    if not enabled("AUTO_UPDATE","1"):
-        out("Automatisches SteamCMD-Update übersprungen.");return
-    steamcmd=HOME/"steamcmd/steamcmd.sh"
+    if not enabled("AUTO_UPDATE", "1"):
+        out("Automatisches SteamCMD-Update übersprungen.")
+        return
+    steamcmd = HOME / "steamcmd/steamcmd.sh"
     if not steamcmd.is_file():
-        warn(f"SteamCMD fehlt; Update übersprungen: {steamcmd}");return
-    user=os.environ.get("STEAM_USER","").strip() or "anonymous"
-    command=[str(steamcmd),"+force_install_dir",str(HOME),"+login",user]
-    if user!="anonymous":
-        command.append(os.environ.get("STEAM_PASS",""))
-        auth=os.environ.get("STEAM_AUTH","")
-        if auth: command.append(auth)
-    command.extend(["+@sSteamCmdForcePlatformType","linux","+app_update","2394010","+quit"])
-    out("Prüfe SteamCMD-Updates für den nativen Linux-Server.")
-    result=subprocess.run(command,cwd=steamcmd.parent,env=env,check=False)
-    if result.returncode: fail(f"SteamCMD-Update fehlgeschlagen, Exit {result.returncode}.",39)
+        warn(f"SteamCMD fehlt; Update übersprungen: {steamcmd}")
+        return
+    user = os.environ.get("STEAM_USER", "").strip() or "anonymous"
+    command = [str(steamcmd), "+force_install_dir", str(SERVER_ROOT), "+login", user]
+    if user != "anonymous":
+        command.append(os.environ.get("STEAM_PASS", ""))
+        auth = os.environ.get("STEAM_AUTH", "")
+        if auth:
+            command.append(auth)
+    command.extend(["+@sSteamCmdForcePlatformType", "windows", "+app_update", "2394010", "+quit"])
+    out("Prüfe SteamCMD-Updates für den Windows-Modserver.")
+    result = subprocess.run(command, cwd=steamcmd.parent, env=env, check=False)
+    if result.returncode:
+        fail(f"SteamCMD-Update fehlgeschlagen, Exit {result.returncode}.", 39)
+
 
 def run_parser(env):
     migrate_configuration()
-    result=subprocess.run([str(PARSER)],cwd=HOME,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    output=result.stdout or ""
+    result = subprocess.run(
+        [str(PARSER)],
+        cwd=HOME,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    output = result.stdout or ""
     for line in output.splitlines():
-        match=SECRET_LINE.match(line)
-        print(f"{match.group(1)} <redacted>" if match else line,flush=True)
+        match = SECRET_LINE.match(line)
+        print(f"{match.group(1)} <redacted>" if match else line, flush=True)
     if result.returncode or "INI file updated successfully." not in output:
-        fail(f"Config-Parser fehlgeschlagen, Exit {result.returncode}.",40)
-    required=("RESTAPIEnabled with value: True",f"RESTAPIPort with value: {env['REST_API_PORT']}","RCONEnabled with value: False")
-    if any(item not in output for item in required): fail("Config-Parser hat das REST-Profil unvollständig angewendet.",64)
+        fail(f"Config-Parser fehlgeschlagen, Exit {result.returncode}.", 40)
+    required = (
+        "RESTAPIEnabled with value: True",
+        f"RESTAPIPort with value: {env['REST_API_PORT']}",
+        "RCONEnabled with value: False",
+    )
+    if any(item not in output for item in required):
+        fail("Config-Parser hat das REST-Profil unvollständig angewendet.", 64)
 
-def writable(path,name,code):
-    probe=path/name
-    try: probe.touch(exist_ok=False);probe.unlink()
-    except OSError as exc: fail(f"Pfad ist nicht beschreibbar: {path} ({exc})",code)
+
+def writable(path, name, code):
+    probe = path / name
+    try:
+        probe.touch(exist_ok=False)
+        probe.unlink()
+    except OSError as exc:
+        fail(f"Pfad ist nicht beschreibbar: {path} ({exc})", code)
+
 
 def prepare_storage():
-    subprocess.run(["chmod","-R","u+rwX",str(SAVE_ROOT)],check=True)
-    writable(SAVE_GAMES,".loryvant-save-write-test",42)
-    writable(CONFIG_DIR,".loryvant-config-write-test",45)
+    subprocess.run(["chmod", "-R", "u+rwX", str(SAVE_ROOT), str(MODS_ROOT)], check=True)
+    writable(SAVE_GAMES, ".loryvant-save-write-test", 42)
+    writable(CONFIG_DIR, ".loryvant-config-write-test", 45)
+    writable(MODS_ROOT, ".loryvant-mod-write-test", 46)
 
-def rest(endpoint,method="GET",payload=None,timeout=REST_TIMEOUT):
-    credentials=base64.b64encode(f"admin:{admin_password()}".encode()).decode()
-    headers={"Accept":"application/json","Authorization":f"Basic {credentials}"}
-    data=None
+
+def start_xvfb(env):
+    global xvfb
+    subprocess.run(["pkill", "-TERM", "-x", "Xvfb"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    XDG_DIR.mkdir(parents=True, exist_ok=True)
+    XDG_DIR.chmod(0o700)
+    for path in (X_LOCK, X_SOCKET):
+        path.unlink(missing_ok=True)
+    handle = X_LOG.open("ab", buffering=0)
+    xvfb = subprocess.Popen(
+        ["Xvfb", DISPLAY, "-screen", "0", "1024x768x24", "-nolisten", "tcp", "-ac", "-noreset"],
+        env=env,
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+    )
+    handle.close()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if X_SOCKET.is_socket() and xvfb.poll() is None:
+            out(f"Headless-X11 bereit: {DISPLAY}")
+            return
+        if xvfb.poll() is not None:
+            break
+        time.sleep(0.1)
+    if X_LOG.is_file():
+        print(X_LOG.read_text(errors="replace"), file=sys.stderr)
+    fail("Headless-X11 konnte nicht gestartet werden.", 60)
+
+
+def prepare_wine_prefix(env):
+    if enabled("RESET_WINE_PREFIX") and WINE_PREFIX.exists():
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        target = BACKUP_ROOT / f"wine-prefix-{stamp}"
+        shutil.move(str(WINE_PREFIX), str(target))
+        out(f"Wine-Prefix wurde gesichert: {target}")
+    if (WINE_PREFIX / "system.reg").is_file():
+        return
+    out("Initialisiere den persistenten Wine64-Prefix.")
+    result = subprocess.run(
+        ["wineboot", "-u"],
+        env=env,
+        cwd=HOME,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=120,
+        check=False,
+    )
+    if result.returncode or not (WINE_PREFIX / "system.reg").is_file():
+        fail(f"Wine-Prefix-Initialisierung fehlgeschlagen, Exit {result.returncode}.", 58)
+
+
+def mod_backup_paths():
+    candidates = [
+        MODS_ROOT,
+        WIN64 / "PalDefender",
+        WIN64 / "Mods",
+        WIN64 / "UE4SS",
+        WIN64 / "PalDefender.dll",
+        WIN64 / "d3d9.dll",
+        WIN64 / "winmm.dll",
+        WIN64 / "version.dll",
+        WIN64 / "xinput1_3.dll",
+        WIN64 / "dxgi.dll",
+        SERVER_ROOT / "Pal/Content/Paks/LogicMods",
+        SERVER_ROOT / "Pal/Content/Paks/~mods",
+        SERVER_ROOT / "Pal/Content/Paks/~WorkshopMods",
+    ]
+    return [path for path in candidates if path.exists() or path.is_symlink()]
+
+
+def create_mod_backup():
+    paths = mod_backup_paths()
+    if not paths:
+        out("Mod-Sicherung übersprungen: keine Moddateien gefunden.")
+        return None
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    target = MOD_BACKUP_ROOT / f"mods-{stamp}.tar.gz"
+    with tarfile.open(target, "w:gz", compresslevel=6) as archive:
+        for path in paths:
+            archive.add(path, arcname=str(path.relative_to(HOME)), recursive=True)
+    backups = sorted(MOD_BACKUP_ROOT.glob("mods-*.tar.gz"), key=lambda item: item.stat().st_mtime, reverse=True)
+    for old in backups[10:]:
+        old.unlink(missing_ok=True)
+    out(f"Mod-Sicherung erstellt: {target}")
+    return target
+
+
+def load_info(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"_error": str(exc)}
+
+
+def has_server_rule(value):
+    if isinstance(value, dict):
+        if value.get("IsServer") is True:
+            return True
+        return any(has_server_rule(item) for item in value.values())
+    if isinstance(value, list):
+        return any(has_server_rule(item) for item in value)
+    return False
+
+
+def active_mods():
+    settings = MODS_ROOT / "PalModSettings.ini"
+    active = []
+    if settings.is_file():
+        for line in settings.read_text(errors="replace").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip().lower() == "activemodlist" and value.strip():
+                active.append(value.strip())
+    return active
+
+
+def mod_inventory():
+    records = []
+    workshop = MODS_ROOT / "Workshop"
+    for info_path in sorted(workshop.glob("*/Info.json")):
+        data = load_info(info_path)
+        records.append({
+            "folder": info_path.parent.name,
+            "package": data.get("PackageName", ""),
+            "version": data.get("Version", ""),
+            "server": has_server_rule(data),
+            "error": data.get("_error", ""),
+        })
+    return records
+
+
+def print_mod_report():
+    records = mod_inventory()
+    active = active_mods()
+    print(f"Mods aktiv: {'ja' if enabled('MODS_ENABLED', '1') else 'nein'}", flush=True)
+    print(f"Workshop-Verzeichnis: {MODS_ROOT / 'Workshop'}", flush=True)
+    print(f"ActiveModList: {', '.join(active) if active else '<leer>'}", flush=True)
+    if not records:
+        print("Workshop-Pakete: <keine>", flush=True)
+        return
+    print("Workshop-Pakete:", flush=True)
+    for record in records:
+        state = "SERVER" if record["server"] else "PRÜFEN"
+        package = record["package"] or "<PackageName fehlt>"
+        version = record["version"] or "<Version fehlt>"
+        suffix = f" | FEHLER: {record['error']}" if record["error"] else ""
+        print(f"- {package} | {version} | {state} | {record['folder']}{suffix}", flush=True)
+
+
+def check_mods():
+    records = mod_inventory()
+    active = active_mods()
+    packages = [record["package"] for record in records if record["package"]]
+    problems = []
+    duplicates = sorted({name for name in packages if packages.count(name) > 1})
+    if duplicates:
+        problems.append(f"doppelte PackageName: {', '.join(duplicates)}")
+    missing = [name for name in active if name not in packages]
+    if missing:
+        problems.append(f"aktive PackageName ohne Info.json: {', '.join(missing)}")
+    incompatible = [record["package"] or record["folder"] for record in records if not record["server"]]
+    if incompatible:
+        problems.append(f"IsServer=true fehlt oder ist nicht erkennbar: {', '.join(incompatible)}")
+    broken = [record["folder"] for record in records if record["error"]]
+    if broken:
+        problems.append(f"ungültige Info.json: {', '.join(broken)}")
+    if problems:
+        for problem in problems:
+            warn(problem)
+        return False
+    out("Modprüfung bestanden.")
+    return True
+
+
+def rest(endpoint, method="GET", payload=None, timeout=REST_TIMEOUT):
+    credentials = base64.b64encode(f"admin:{admin_password()}".encode()).decode()
+    headers = {"Accept": "application/json", "Authorization": f"Basic {credentials}"}
+    data = None
     if payload is not None:
-        data=json.dumps(payload,separators=(",",":")).encode();headers["Content-Type"]="application/json"
-    request=Request(f"http://{REST_HOST}:{rest_port()}/v1/api/{endpoint.lstrip('/')}",data=data,headers=headers,method=method)
+        data = json.dumps(payload, separators=(",", ":")).encode()
+        headers["Content-Type"] = "application/json"
+    request = Request(
+        f"http://{REST_HOST}:{rest_port()}/v1/api/{endpoint.lstrip('/')}",
+        data=data,
+        headers=headers,
+        method=method,
+    )
     with rest_lock:
         try:
-            with urlopen(request,timeout=timeout) as response: status=response.status;body=response.read()
-        except HTTPError as exc: status=exc.code;body=exc.read()
-        except (URLError,TimeoutError,OSError): return 0,None
-    if not body: return status,None
-    try: return status,json.loads(body.decode(errors="replace"))
-    except json.JSONDecodeError: return status,body.decode(errors="replace")
+            with urlopen(request, timeout=timeout) as response:
+                status = response.status
+                body = response.read()
+        except HTTPError as exc:
+            status = exc.code
+            body = exc.read()
+        except (URLError, TimeoutError, OSError):
+            return 0, None
+    if not body:
+        return status, None
+    try:
+        return status, json.loads(body.decode(errors="replace"))
+    except json.JSONDecodeError:
+        return status, body.decode(errors="replace")
+
 
 def readiness_worker(started):
-    deadline=started+READY_TIMEOUT;next_status=started+15
+    deadline = started + READY_TIMEOUT
+    next_status = started + 30
     while not stop_event.is_set():
-        if server is not None and server.poll() is not None: return
-        status,body=rest("info")
-        if status==200 and isinstance(body,dict) and body.get("version"):
-            elapsed=time.monotonic()-started
-            out("Palworld ist bereit.");out(f"Startdauer des Palworld-Prozesses: {elapsed:.1f} Sekunden.")
-            out(f"REST-Info: {body.get('version')} | {body.get('servername','Server')}");return
-        now=time.monotonic()
-        if now>=deadline: err(f"REST-API wurde innerhalb von {READY_TIMEOUT} Sekunden nicht bereit.");return
-        if now>=next_status:
-            out(f"Palworld-Prozess läuft; REST-API noch nicht bereit ({int(now-started)} Sekunden).");next_status+=15
-        if stop_event.wait(2): return
+        if server is not None and server.poll() is not None:
+            return
+        status, body = rest("info")
+        if status == 200 and isinstance(body, dict) and body.get("version"):
+            elapsed = time.monotonic() - started
+            out("Palworld ist bereit.")
+            out(f"Startdauer des Palworld-Prozesses: {elapsed:.1f} Sekunden.")
+            out(f"REST-Info: {body.get('version')} | {body.get('servername', 'Server')}")
+            return
+        now = time.monotonic()
+        if now >= deadline:
+            err(f"REST-API wurde innerhalb von {READY_TIMEOUT} Sekunden nicht bereit.")
+            return
+        if now >= next_status:
+            out(f"Palworld-Prozess läuft; REST-API noch nicht bereit ({int(now-started)} Sekunden).")
+            next_status += 30
+        if stop_event.wait(5):
+            return
 
-def print_json(value): print(json.dumps(value,ensure_ascii=False,indent=2,sort_keys=True),flush=True)
-def seconds(value,default=5):
-    try: return max(0,min(3600,int(value)))
-    except ValueError: return default
+
+def print_json(value):
+    print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), flush=True)
+
+
+def seconds(value, default=5):
+    try:
+        return max(0, min(3600, int(value)))
+    except ValueError:
+        return default
+
 
 def console(command):
-    parts=command.split();name=parts[0].lower();args=parts[1:]
-    if name in {"help","?"}:
-        print("REST-Kommandos: info, showinfo, showplayers, settings, metrics, save, broadcast <Text>, kickplayer <ID> [Text], banplayer <ID> [Text], unbanplayer <ID>, shutdown [Sekunden] [Text], doexit",flush=True);return
-    endpoint="";method="GET";payload=None
-    if name in {"info","showinfo"}: endpoint="info"
-    elif name in {"showplayers","players"}: endpoint="players"
-    elif name in {"settings","metrics"}: endpoint=name
-    elif name=="save": endpoint="save";method="POST"
-    elif name in {"broadcast","announce"}:
-        endpoint="announce";method="POST";payload={"message":" ".join(args).strip()}
-        if not payload["message"]: err("Broadcast benötigt einen Nachrichtentext.");return
-    elif name in {"kickplayer","kick","banplayer","ban"} and args:
-        endpoint="kick" if name in {"kickplayer","kick"} else "ban";method="POST"
-        payload={"userid":args[0],"message":" ".join(args[1:]).strip()}
-    elif name in {"unbanplayer","unban"} and args: endpoint="unban";method="POST";payload={"userid":args[0]}
-    elif name=="shutdown":
-        endpoint="shutdown";method="POST";wait=seconds(args[0]) if args else 5
-        payload={"waittime":wait,"message":" ".join(args[1:] if args else []).strip() or "Server wird beendet."}
-    elif name in {"doexit","stop"}: endpoint="stop";method="POST"
-    else: err(f"Unbekanntes Konsolenkommando: {command}");return
-    status,body=rest(endpoint,method,payload,10)
-    if status==200:
-        if body is not None: print_json(body)
-        else: out(f"REST-Kommando erfolgreich: {name}")
-    elif status==401: err("REST-Authentifizierung fehlgeschlagen.")
-    elif status: err(f"REST-Kommando {name} lieferte HTTP {status}.")
-    else: err(f"REST-Zeitüberschreitung für Kommando: {command}")
+    parts = command.split()
+    name = parts[0].lower()
+    args = parts[1:]
+    if name in {"mods", "modlist"}:
+        print_mod_report()
+        return
+    if name == "modcheck":
+        check_mods()
+        return
+    if name == "modbackup":
+        create_mod_backup()
+        return
+    if name == "modpaths":
+        print(f"Workshop: {MODS_ROOT / 'Workshop'}", flush=True)
+        print(f"PalModSettings.ini: {MODS_ROOT / 'PalModSettings.ini'}", flush=True)
+        print(f"DLL-Mods: {WIN64}", flush=True)
+        print(f"UE4SS: {WIN64 / 'UE4SS'}", flush=True)
+        print(f"PAK/LogicMods: {SERVER_ROOT / 'Pal/Content/Paks'}", flush=True)
+        return
+    if name in {"help", "?"}:
+        print("Kommandos: mods, modcheck, modbackup, modpaths, info, showplayers, settings, metrics, save, broadcast <Text>, kickplayer <ID> [Text], banplayer <ID> [Text], unbanplayer <ID>, shutdown [Sekunden] [Text], doexit", flush=True)
+        return
+    endpoint = ""
+    method = "GET"
+    payload = None
+    if name in {"info", "showinfo"}:
+        endpoint = "info"
+    elif name in {"showplayers", "players"}:
+        endpoint = "players"
+    elif name in {"settings", "metrics"}:
+        endpoint = name
+    elif name == "save":
+        endpoint = "save"
+        method = "POST"
+    elif name in {"broadcast", "announce"}:
+        endpoint = "announce"
+        method = "POST"
+        payload = {"message": " ".join(args).strip()}
+        if not payload["message"]:
+            err("Broadcast benötigt einen Nachrichtentext.")
+            return
+    elif name in {"kickplayer", "kick", "banplayer", "ban"} and args:
+        endpoint = "kick" if name in {"kickplayer", "kick"} else "ban"
+        method = "POST"
+        payload = {"userid": args[0], "message": " ".join(args[1:]).strip()}
+    elif name in {"unbanplayer", "unban"} and args:
+        endpoint = "unban"
+        method = "POST"
+        payload = {"userid": args[0]}
+    elif name == "shutdown":
+        endpoint = "shutdown"
+        method = "POST"
+        wait = seconds(args[0]) if args else 5
+        payload = {"waittime": wait, "message": " ".join(args[1:] if args else []).strip() or "Server wird beendet."}
+    elif name in {"doexit", "stop"}:
+        endpoint = "stop"
+        method = "POST"
+    else:
+        err(f"Unbekanntes Konsolenkommando: {command}")
+        return
+    status, body = rest(endpoint, method, payload, 10)
+    if status == 200:
+        if body is not None:
+            print_json(body)
+        else:
+            out(f"REST-Kommando erfolgreich: {name}")
+    elif status == 401:
+        err("REST-Authentifizierung fehlgeschlagen.")
+    elif status:
+        err(f"REST-Kommando {name} lieferte HTTP {status}.")
+    else:
+        err(f"REST-Zeitüberschreitung für Kommando: {command}")
+
 
 def console_worker():
     for line in sys.stdin:
-        if stop_event.is_set(): return
-        command=line.strip()
-        if command: console(command)
+        if stop_event.is_set():
+            return
+        command = line.strip()
+        if command:
+            console(command)
+
 
 def server_command():
-    port=os.environ.get("SERVER_PORT","8211")
-    command=[str(EXE),"Pal","-publiclobby",f"-port={port}",f"-publicport={port}",f"-players={os.environ.get('MAX_PLAYERS','32')}","-logformat=text"]
-    public_ip=os.environ.get("PUBLIC_IP","").strip()
-    if public_ip: command.insert(-1,f"-publicip={public_ip}")
+    import shlex
+
+    port = os.environ.get("SERVER_PORT", "8211")
+    command = [
+        "dbus-run-session",
+        "--",
+        "wine64",
+        str(EXE),
+        "-publiclobby",
+        f"-port={port}",
+        f"-publicport={port}",
+        f"-players={os.environ.get('MAX_PLAYERS', '32')}",
+        "-logformat=text",
+    ]
+    public_ip = os.environ.get("PUBLIC_IP", "").strip()
+    if public_ip:
+        command.append(f"-publicip={public_ip}")
+    if not enabled("MODS_ENABLED", "1"):
+        command.append("-NoMods")
+    extra = os.environ.get("EXTRA_STARTUP_ARGS", "").strip()
+    if extra:
+        command.extend(shlex.split(extra))
     return command
 
-def validate_profile():
-    command=server_command()
-    forbidden={"-rcon","-useperfthreads","-NoAsyncLoadingThread","-UseMultithreadForDS","umu-run"}
-    present=forbidden.intersection(command)
-    if present: fail(f"Unerwünschte Palworld-Argumente aktiv: {', '.join(sorted(present))}",1)
-    if command[0]!=str(EXE) or command[1]!="Pal": fail("Nativer Linux-Startpfad ist ungültig.",1)
-    if "-logformat=text" not in command: fail("Palworld-Textlogging fehlt.",1)
-    if rest_port()==os.environ.get("SERVER_PORT","8211"): fail("REST_API_PORT kollidiert mit SERVER_PORT.",1)
 
-def handle_signal(signum,_frame):
+def validate_profile():
+    command = server_command()
+    if command[:3] != ["dbus-run-session", "--", "wine64"]:
+        fail("Wine-Modstartpfad ist ungültig.", 1)
+    forbidden = {"-rcon", "-useperfthreads", "-NoAsyncLoadingThread", "-UseMultithreadForDS", "umu-run"}
+    present = forbidden.intersection(command)
+    if present:
+        fail(f"Unerwünschte Palworld-Argumente aktiv: {', '.join(sorted(present))}", 1)
+    if "-logformat=text" not in command:
+        fail("Palworld-Textlogging fehlt.", 1)
+    if rest_port() == os.environ.get("SERVER_PORT", "8211"):
+        fail("REST_API_PORT kollidiert mit SERVER_PORT.", 1)
+
+
+def handle_signal(signum, _frame):
     stop_event.set()
     if server is not None and server.poll() is None:
-        try: os.killpg(server.pid,signum)
-        except ProcessLookupError: pass
+        try:
+            os.killpg(server.pid, signum)
+        except ProcessLookupError:
+            pass
+
 
 def cleanup():
     stop_event.set()
     if server is not None and server.poll() is None:
-        handle_signal(signal.SIGTERM,None)
-        try: server.wait(timeout=15)
+        handle_signal(signal.SIGTERM, None)
+        try:
+            server.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            try: os.killpg(server.pid,signal.SIGKILL)
-            except ProcessLookupError: pass
+            try:
+                os.killpg(server.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    if xvfb is not None and xvfb.poll() is None:
+        xvfb.terminate()
+        try:
+            xvfb.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            xvfb.kill()
+    for path in (X_LOCK, X_SOCKET):
+        path.unlink(missing_ok=True)
+
 
 def preflight():
-    if shutil.which("getconf") is None: fail("getconf fehlt im Containerimage.",1)
+    for name in ("wine64", "wineboot", "Xvfb", "dbus-run-session", "getconf"):
+        need_command(name, 1)
     validate_profile()
-    value=subprocess.run(["getconf","GNU_LIBC_VERSION"],text=True,capture_output=True,check=True).stdout.strip()
-    out(f"Launcher-Selbsttest bestanden: v{VERSION}, nativer Linux-Server, {value}, REST-Port {rest_port()}")
+    value = subprocess.run(["getconf", "GNU_LIBC_VERSION"], text=True, capture_output=True, check=True).stdout.strip()
+    out(f"Launcher-Selbsttest bestanden: v{VERSION}, Windows-Modserver mit Wine64, {value}, REST-Port {rest_port()}")
     return 0
 
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--version",action="store_true");parser.add_argument("--self-test",action="store_true");args=parser.parse_args()
-    if args.version: print(f"palworld-umu-start {VERSION}");return 0
-    if args.self_test: return preflight()
-    env=environment()
-    need_file(PARSER,"PalworldServerConfigParser",40,True);need_file(DEFAULT_INI,"DefaultPalWorldSettings.ini",47)
-    admin_password();validate_profile();prepare_directories();update_server(env)
-    need_file(EXE,"nativer Palworld-Linuxserver",48,True);run_parser(env);prepare_storage()
-    command=server_command()
-    out(f"Egg v{VERSION}");out("Runtime: nativer Palworld Linux Dedicated Server");out("Kompatibilitätsschicht: entfällt")
-    out(f"Save-Pfad ist beschreibbar: {SAVE_GAMES}");out(f"Lokale REST-API: {REST_HOST}:{env['REST_API_PORT']}")
-    out(f"Palworld-Argumente: {' '.join(command[2:])}")
-    for sig in (signal.SIGTERM,signal.SIGINT): signal.signal(sig,handle_signal)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.version:
+        print(f"palworld-umu-start {VERSION}")
+        return 0
+    if args.self_test:
+        return preflight()
+    for name, code in (("wine64", 43), ("wineboot", 58), ("Xvfb", 60), ("dbus-run-session", 57)):
+        need_command(name, code)
+    need_file(PARSER, "PalworldServerConfigParser", 40, True)
+    need_file(DEFAULT_INI, "DefaultPalWorldSettings.ini", 47)
+    admin_password()
+    validate_profile()
+    prepare_directories()
+    env = environment()
+    start_xvfb(env)
+    prepare_wine_prefix(env)
+    if enabled("MOD_BACKUP_ON_START", "1"):
+        create_mod_backup()
+    update_server(env)
+    need_file(EXE, "Palworld-Windowsserver", 48)
+    prepare_shared_paths()
+    run_parser(env)
+    prepare_storage()
+    check_mods()
+    command = server_command()
+    out(f"Egg v{VERSION}")
+    out("Runtime: Palworld Windows Dedicated Server unter Wine64")
+    out("Modplattform: Workshop, UE4SS, DLL-Loader und PAK-Verzeichnisse vorbereitet")
+    out(f"Windows-Server: {SERVER_ROOT}")
+    out(f"Workshop-Mods: {MODS_ROOT / 'Workshop'}")
+    out(f"DLL-Mods: {WIN64}")
+    out(f"Save-Pfad: {SAVE_GAMES}")
+    out(f"Lokale REST-API: {REST_HOST}:{env['REST_API_PORT']}")
+    overrides = env.get("WINEDLLOVERRIDES", "<keine>")
+    out(f"Wine-DLL-Overrides: {overrides}")
+    safe_args = [item for item in command[4:] if "password" not in item.lower()]
+    out(f"Palworld-Argumente: {' '.join(safe_args)}")
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, handle_signal)
     global server
-    started=time.monotonic();server=subprocess.Popen(command,env=env,cwd=HOME,start_new_session=True)
-    threading.Thread(target=readiness_worker,args=(started,),name="rest-readiness",daemon=True).start()
-    threading.Thread(target=console_worker,name="stdin-rest",daemon=True).start()
+    started = time.monotonic()
+    server = subprocess.Popen(command, env=env, cwd=SERVER_ROOT, start_new_session=True)
+    threading.Thread(target=readiness_worker, args=(started,), name="rest-readiness", daemon=True).start()
+    threading.Thread(target=console_worker, name="stdin-rest", daemon=True).start()
     return server.wait()
 
-if __name__=="__main__":
-    try: raise SystemExit(main())
-    finally: cleanup()
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    finally:
+        cleanup()
