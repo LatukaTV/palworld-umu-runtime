@@ -143,3 +143,15 @@ The Palworld process profile is:
 ```
 
 Readiness is reached when `/v1/api/info` returns a valid version. The watchdog repeats the same local REST probe every 15 seconds and exits with code `70` after six consecutive failures.
+
+## Steam Linux Runtime 4 profile – 2026-07-19
+
+The v0.2.7 image uses Valves official Steam Linux Runtime 4 platform OCI image as its outer container userspace. Proton 11 uses SteamRT4, so GE-Proton11-1 now runs against the matching runtime libraries while Pelican keeps its normal Seccomp and AppArmor policy.
+
+The nested pressure-vessel edge stays removed because Pelican blocks the required user namespace. The outer OCI image already supplies the dedicated-server runtime environment. A small image-internal Python entrypoint executes the unchanged panel startup:
+
+```text
+palworld-umu-start
+```
+
+The launcher performs one REST readiness sequence, emits the exact Pelican done marker and then stops all automatic REST traffic. Panel commands remain available on demand. The runtime prints the measured Palworld process startup time after readiness.
