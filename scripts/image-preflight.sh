@@ -37,12 +37,13 @@ done
 [[ -s /etc/machine-id ]] || fail "/etc/machine-id fehlt."
 
 step "Launcher"
-[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.13" ]] || fail "Launcher-Version stimmt nicht."
+[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.14" ]] || fail "Launcher-Version stimmt nicht."
 palworld-umu-start --self-test
 /usr/local/bin/palworld-umu-start-core --self-test
 grep -Fq 'EXPECTED_WINE = "wine-11.13"' /usr/local/bin/palworld-umu-start || fail "Wine-Version-Pinning fehlt."
-grep -Fq 'reason = "manual-reset" if reset_requested else f"before-{actual}"' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Migrationsgrund fehlt."
-grep -Fq 'f"wine-prefix-{reason}-{stamp}"' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Sicherungspfad fehlt."
+grep -Fq 'WINE_KERNEL32 = WINE_PREFIX / "drive_c/windows/system32/kernel32.dll"' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Vollständigkeitsprüfung fehlt."
+grep -Fq 'reason = "incomplete"' /usr/local/bin/palworld-umu-start || fail "Unvollständige Wine-Prefixe werden nicht gesichert."
+grep -Fq 'kernel32="${prefix}/drive_c/windows/system32/kernel32.dll"' /usr/local/bin/wineboot-wrapper || fail "wineboot-Vollständigkeitsprüfung fehlt."
 grep -Fq 'SAVE_ROOT = SERVER_ROOT / "Pal/Saved"' /usr/local/bin/palworld-umu-start-core || fail "Eigenständiger Windows-Save-Pfad fehlt."
 grep -Fq 'prepare_independent_saved()' /usr/local/bin/palworld-umu-start-core || fail "Save-Migration fehlt."
 grep -Fq 'Aktive Welt für WindowsServer' /usr/local/bin/palworld-umu-start-core || fail "DedicatedServerName-Zuordnung fehlt."
@@ -55,4 +56,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: Debian 13, glibc 2.41, SteamCMD-32-Bit-Laufzeit, WineHQ 11.13, Prefix-Migration, Xvfb, D-Bus, Backup-Unterbaum-Reparatur, isolierter Save-Pfad, Launcher und Pelican-Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, vollständige Prefix-Prüfung, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
