@@ -138,7 +138,7 @@ done
 
 rm -rf "${SMOKE_PREFIX}"
 set +e
-timeout 120 env \
+timeout 150 env \
     HOME=/home/container \
     USER=container \
     DISPLAY=:98 \
@@ -146,31 +146,7 @@ timeout 120 env \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=-all \
-    dbus-run-session -- bash -lc '
-        wineboot -u &
-        boot_pid=$!
-        for _ in $(seq 1 1200); do
-            if [[ -s "${WINEPREFIX}/system.reg" && -s "${WINEPREFIX}/drive_c/windows/system32/kernel32.dll" ]]; then
-                sleep 1
-                wineserver -k >/dev/null 2>&1 || true
-                wait "${boot_pid}"
-                rc=$?
-                wineserver -w >/dev/null 2>&1 || true
-                exit "${rc}"
-            fi
-            if ! kill -0 "${boot_pid}" 2>/dev/null; then
-                wait "${boot_pid}"
-                rc=$?
-                wineserver -k >/dev/null 2>&1 || true
-                wineserver -w >/dev/null 2>&1 || true
-                exit "${rc}"
-            fi
-            sleep .1
-        done
-        wineserver -k >/dev/null 2>&1 || true
-        wait "${boot_pid}" >/dev/null 2>&1 || true
-        exit 124
-    ' > /tmp/loryvant-wineboot-smoke.log 2>&1
+    dbus-run-session -- wineboot -u > /tmp/loryvant-wineboot-smoke.log 2>&1
 WINEBOOT_RC=$?
 timeout 30 env WINEPREFIX="${SMOKE_PREFIX}" wineserver -w >> /tmp/loryvant-wineboot-smoke.log 2>&1
 WINESERVER_RC=$?
@@ -179,7 +155,13 @@ cat /tmp/loryvant-wineboot-smoke.log || true
 [[ -s "${SMOKE_PREFIX}/system.reg" ]] || \
     fail "Wine64-Prefix wurde nicht initialisiert; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
 [[ -s "${SMOKE_PREFIX}/drive_c/windows/system32/kernel32.dll" ]] || \
-    fail "Wine64-Prefix enthält keine kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+    fail "Wine64-Prefix enthält keine 64-Bit-kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+[[ -s "${SMOKE_PREFIX}/drive_c/windows/syswow64/kernel32.dll" ]] || \
+    fail "Wine64-Prefix enthält keine WoW64-kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+[[ -s "${SMOKE_PREFIX}/drive_c/windows/system32/cmd.exe" ]] || \
+    fail "Wine64-Prefix enthält keine 64-Bit-cmd.exe; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+[[ -s "${SMOKE_PREFIX}/drive_c/windows/syswow64/cmd.exe" ]] || \
+    fail "Wine64-Prefix enthält keine WoW64-cmd.exe; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
 set +e
 timeout 45 env \
     HOME=/home/container \
@@ -188,7 +170,7 @@ timeout 45 env \
     XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
-    WINEDEBUG=+loaddll,+module \
+    WINEDEBUG=-all \
     dbus-run-session -- bash -lc '
         timeout 30 wine64 cmd.exe /c ver
         rc=$?
@@ -210,4 +192,4 @@ if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
         "${WINEBOOT_RC}" "${WINESERVER_RC}"
 fi
 
-printf '[runtime-smoke] OK: WineHQ 11.13, funktionaler Prefix, Prefix-Recovery, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint geprüft.\n'
+printf '[runtime-smoke] OK: WineHQ 11.13, funktionaler 64-Bit-/WoW64-Prefix, Prefix-Recovery, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint geprüft.\n'
