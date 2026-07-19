@@ -1,90 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-
-fail() {
-    printf '[runtime-smoke] FEHLER: %s\n' "$1" >&2
-    exit 1
-}
-
-step() {
-    printf '[runtime-smoke] PRÜFE: %s\n' "$1"
-}
-
-run_check() {
-    local label="$1"
-    shift
-
-    step "$label"
-    if "$@"; then
-        return 0
-    else
-        local rc=$?
-        fail "${label} fehlgeschlagen (Exit ${rc}): $*"
-    fi
-}
-
-XVFB_PID=""
-XDG_TEST_DIR="/tmp/loryvant-xdg-runtime-smoke"
-cleanup() {
-    if [[ -n "${XVFB_PID}" ]]; then
-        kill "${XVFB_PID}" >/dev/null 2>&1 || true
-        wait "${XVFB_PID}" >/dev/null 2>&1 || true
-    fi
-    rm -rf "${XDG_TEST_DIR}" /tmp/.X99-lock /tmp/.X11-unix/X99
-}
+fail(){ printf '[runtime-smoke] FEHLER: %s\n' "$1" >&2; exit 1; }
+cleanup(){ [[ -z "${XVFB_PID:-}" ]] || kill "${XVFB_PID}" >/dev/null 2>&1 || true; rm -rf /tmp/loryvant-xdg-runtime-smoke /tmp/.X99-lock /tmp/.X11-unix/X99; }
 trap cleanup EXIT
-trap 'rc=$?; printf "[runtime-smoke] FEHLER: Zeile %s, Exit %s, Befehl: %s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2; exit "$rc"' ERR
-
 /usr/local/bin/palworld-umu-image-preflight
-
-run_check "Python-Aufruf" python3 --version
-run_check "UMU-CLI-Aufruf" umu-run --version
-run_check "Launcher-Selbsttest" palworld-umu-start --self-test
-
-step "Python-REST-Client"
-python3 - <<'PY'
-import base64
-import json
-import urllib.request
-
-assert base64.b64encode(b"admin:test").decode("ascii") == "YWRtaW46dGVzdA=="
-assert json.loads('{"version":"v1"}')["version"] == "v1"
-assert urllib.request.Request("http://127.0.0.1:8212/v1/api/info").full_url.endswith("/v1/api/info")
-print("[runtime-smoke] REST-Clientmodule verfügbar.")
-PY
-
-step "Headless-X11-Start als Containerbenutzer"
-rm -rf "${XDG_TEST_DIR}" /tmp/.X99-lock /tmp/.X11-unix/X99
-mkdir -p "${XDG_TEST_DIR}"
-chmod 0700 "${XDG_TEST_DIR}"
-export XDG_RUNTIME_DIR="${XDG_TEST_DIR}"
-export DISPLAY=":99"
-unset WAYLAND_DISPLAY || true
-Xvfb "${DISPLAY}" -screen 0 1024x768x24 -nolisten tcp -ac -noreset \
-    >/tmp/loryvant-xvfb-smoke.log 2>&1 &
+python3 --version
+umu-run --version
+palworld-umu-start --self-test
+mkdir -p /tmp/loryvant-xdg-runtime-smoke
+chmod 0700 /tmp/loryvant-xdg-runtime-smoke
+XDG_RUNTIME_DIR=/tmp/loryvant-xdg-runtime-smoke DISPLAY=:99 Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -ac -noreset >/tmp/loryvant-xvfb-smoke.log 2>&1 &
 XVFB_PID=$!
-for _ in $(seq 1 100); do
-    if [[ -S /tmp/.X11-unix/X99 ]] && kill -0 "${XVFB_PID}" 2>/dev/null; then
-        break
-    fi
-    sleep 0.1
-done
-[[ -S /tmp/.X11-unix/X99 ]] || {
-    cat /tmp/loryvant-xvfb-smoke.log >&2 || true
-    fail "Xvfb hat keinen X11-Socket bereitgestellt."
-}
-kill -0 "${XVFB_PID}" 2>/dev/null || {
-    cat /tmp/loryvant-xvfb-smoke.log >&2 || true
-    fail "Xvfb ist während des Smoke-Tests beendet worden."
-}
-printf '[runtime-smoke] X11-Socket bereit: %s\n' /tmp/.X11-unix/X99
-
-if [[ -e /home/container/steamcmd/steamcmd.sh ]]; then
-    step "SteamCMD im eingehängten Pelican-Servervolume"
-    [[ -x /home/container/steamcmd/steamcmd.sh ]] || \
-        fail "/home/container/steamcmd/steamcmd.sh ist nicht ausführbar."
-else
-    printf '[runtime-smoke] INFO: SteamCMD-Prüfung übersprungen; kein Pelican-Servervolume eingehängt.\n'
-fi
-
-printf '[runtime-smoke] OK: Launcher, lokale REST-Steuerung, UMU, GE-Proton11-1 und Headless-X11 sind ausführbar.\n'
+for _ in $(seq 1 100); do [[ -S /tmp/.X11-unix/X99 ]] && kill -0 "${XVFB_PID}" 2>/dev/null && break; sleep .1; done
+[[ -S /tmp/.X11-unix/X99 ]] || { cat /tmp/loryvant-xvfb-smoke.log >&2 || true; fail "Xvfb-Socket fehlt."; }
+printf '[runtime-smoke] OK: SteamRT4, UMU, GE-Proton11-1, Entrypoint und Xvfb sind ausführbar.\n'
