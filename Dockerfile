@@ -3,7 +3,7 @@
 FROM ghcr.io/parkervcp/steamcmd:debian
 
 LABEL org.opencontainers.image.title="Palworld UMU Runtime"
-LABEL org.opencontainers.image.description="Pelican SteamCMD runtime with UMU 1.4.0 and GE-Proton11-1"
+LABEL org.opencontainers.image.description="Pelican SteamCMD runtime with UMU 1.4.0 and GE-Proton11-1 on Debian 13 userspace"
 LABEL org.opencontainers.image.source="https://github.com/LatukaTV/palworld-umu-runtime"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -26,11 +26,18 @@ RUN set -eux; \
     arch="${TARGETARCH:-amd64}"; \
     test "${arch}" = "amd64"
 
-# Runtime dependencies used by UMU's pressure-vessel/bubblewrap launcher.
-# The inherited SteamCMD image supplies the Pelican entrypoint, RCON and the
-# required Steam 32-bit runtime libraries.
+# Keep the inherited Pelican SteamCMD entrypoint while moving its userspace to
+# Debian 13. GE-Proton11-1 requires glibc 2.38 or newer in host-runtime mode.
 RUN set -eux; \
+    . /etc/os-release; \
+    test "${ID}" = "debian"; \
+    if [ "${VERSION_CODENAME:-}" != "trixie" ]; then \
+        for source in $(find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \)); do \
+            sed -ri 's/(bookworm|bullseye)/trixie/g' "${source}"; \
+        done; \
+    fi; \
     apt-get update; \
+    apt-get full-upgrade -y; \
     apt-get install -y --no-install-recommends \
         bubblewrap \
         ca-certificates \
@@ -48,6 +55,9 @@ RUN set -eux; \
         tar \
         xz-utils \
         zstd; \
+    glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"; \
+    dpkg --compare-versions "${glibc_version}" ge 2.38; \
+    grep -Eq '^VERSION_CODENAME=trixie$' /etc/os-release; \
     rm -rf /var/lib/apt/lists/*
 
 # Install the architecture-independent UMU zipapp and verify the exact
