@@ -69,3 +69,12 @@
 - Der Launcher maskiert Passwortwerte aus der Parserausgabe, prüft die Runtime, startet Headless-X11, leitet Pelican-Konsolenbefehle an RCON weiter und überwacht die RCON-Bereitschaft.
 - Shell-Arithmetik und Globbing befinden sich nicht mehr im Egg-Startup-Feld; damit kann Wings den Befehl nicht mehr durch Dateinamenexpansion beschädigen.
 - Image-Preflight und Runtime-Smoke-Test prüfen Launcher-Version, Ausführbarkeit und Selbsttest vor der Veröffentlichung.
+
+## 0.1.9 – 2026-07-19
+
+- Die drei geerbten Palworld-Altparameter `-useperfthreads`, `-NoAsyncLoadingThread` und `-UseMultithreadForDS` aus dem v1.0-Startprofil entfernt.
+- `-logformat=text` ergänzt und die effektiven, nicht geheimen Palworld-Argumente beim Start sichtbar gemacht.
+- Nach erfolgreicher RCON-Bereitschaft einen dauerhaften Healthcheck im Abstand von 15 Sekunden ergänzt.
+- Sechs aufeinanderfolgende RCON-Ausfälle lösen nach 90 Sekunden einen eindeutigen Soft-Lock-Fehler aus.
+- Bei erkanntem Soft-Lock beendet der Launcher die vollständige UMU-/Proton-Prozessgruppe und liefert Exit-Code `70`, damit Pelican keinen hängenden Server weiter als gesund behandelt.
+- Der Selbsttest weist die entfernten Altparameter zurück und prüft das 90-Sekunden-Watchdog-Fenster.
