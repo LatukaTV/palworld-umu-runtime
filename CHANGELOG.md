@@ -128,3 +128,12 @@
 - Der Config-Parser läuft aus `/home/container/ModdedServer` und muss den isolierten Windows-Konfigurationspfad bestätigen.
 - Ein Laufzeit-Preflight prüft Datei-Kopie und atomisches Umbenennen direkt im Windows-Save-Ziel.
 - Der Container-Smoke-Test reproduziert Migration, Weltwahl und atomaren Zielpfad mit einem temporären Teststand.
+
+## 0.1.15 – 2026-07-19
+
+- Den von der nativen Linux-Welt übernommenen, ausschließlich generierten Welt-Unterbaum `backup` vor dem Windows-Start einmalig aus dem aktiven Save-Pfad entfernt.
+- Der alte Backup-Unterbaum bleibt vollständig unter `/home/container/.loryvant-backups/saves/generated-backup-tree-<Welt>-<Zeit>` erhalten.
+- Für die aktive Welt werden frische Verzeichnisse `backup/local` und `backup/world` erzeugt und durch Kopieren plus atomisches Umbenennen validiert.
+- Der aktive Weltstand, `Level.sav`, `LevelMeta.sav`, `Players` und die übrigen produktiven Save-Dateien bleiben unverändert.
+- Ein versionsgebundener Marker verhindert wiederholte Bereinigungen; `RESET_WORLD_BACKUP_TREE=1` erlaubt einen ausdrücklich angeforderten erneuten Lauf.
+- Image-Preflight und Runtime-Smoke-Test prüfen Wrapper, Kernlauncher, Save-Migration und die datenhaltende Backup-Unterbaum-Reparatur getrennt.
