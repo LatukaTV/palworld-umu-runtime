@@ -132,6 +132,19 @@ def prepare_shared_paths():
     replace_with_symlink(SERVER_MODS, MODS_ROOT, "ModdedServer-Mods")
 
 
+def prepare_mod_settings():
+    settings = MODS_ROOT / "PalModSettings.ini"
+    if settings.is_file():
+        return
+    settings.write_text(
+        "[PalModSettings]\n"
+        "bGlobalEnableMod=true\n"
+        "WorkshopRootDir=Z:\\home\\container\\Mods\\Workshop\n",
+        encoding="utf-8",
+    )
+    out(f"PalModSettings.ini wurde angelegt: {settings}")
+
+
 def migrate_configuration():
     if CONFIG.is_file() and CONFIG.stat().st_size > 0:
         return
@@ -618,7 +631,9 @@ def server_command():
     public_ip = os.environ.get("PUBLIC_IP", "").strip()
     if public_ip:
         command.append(f"-publicip={public_ip}")
-    if not enabled("MODS_ENABLED", "1"):
+    if enabled("MODS_ENABLED", "1"):
+        command.append(r"-workshopdir=Z:\home\container\Mods\Workshop")
+    else:
         command.append("-NoMods")
     extra = os.environ.get("EXTRA_STARTUP_ARGS", "").strip()
     if extra:
@@ -696,6 +711,7 @@ def main():
     admin_password()
     validate_profile()
     prepare_directories()
+    prepare_mod_settings()
     env = environment()
     start_xvfb(env)
     prepare_wine_prefix(env)
