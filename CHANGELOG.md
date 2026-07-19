@@ -78,3 +78,12 @@
 - Sechs aufeinanderfolgende RCON-Ausfälle lösen nach 90 Sekunden einen eindeutigen Soft-Lock-Fehler aus.
 - Bei erkanntem Soft-Lock beendet der Launcher die vollständige UMU-/Proton-Prozessgruppe und liefert Exit-Code `70`, damit Pelican keinen hängenden Server weiter als gesund behandelt.
 - Der Selbsttest weist die entfernten Altparameter zurück und prüft das 90-Sekunden-Watchdog-Fenster.
+
+## 0.1.10 – 2026-07-19
+
+- Den Palworld-RCON-Dienst im v0.2.6-Laufzeitprofil abgeschaltet und das Startargument `-rcon` entfernt.
+- Readiness und Soft-Lock-Watchdog auf die lokale Palworld-REST-API unter `127.0.0.1:8212` umgestellt.
+- Der Config-Parser setzt verbindlich `RESTAPIEnabled=True`, `RESTAPIPort=8212`, `RCONEnabled=False` und `LogFormatType=Text`.
+- Pelican-Konsolenbefehle wie `info`, `showplayers`, `save`, `shutdown`, `broadcast`, `kickplayer` und `banplayer` werden intern auf offizielle REST-Endpunkte abgebildet.
+- Die REST-API bleibt containerlokal und erhält keine öffentliche Portzuweisung.
+- Der Watchdog prüft weiterhin alle 15 Sekunden und beendet einen 90 Sekunden anhaltenden Soft-Lock mit Exit-Code `70`.
