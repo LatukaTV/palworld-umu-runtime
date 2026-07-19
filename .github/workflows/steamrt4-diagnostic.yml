@@ -33,13 +33,18 @@ jobs:
           set +e
           docker build --progress=plain --tag palworld-umu-runtime:diagnostic . >/tmp/build.log 2>&1
           rc=$?
+          tail -n 200 /tmp/build.log >/tmp/build-tail.log
           set -e
-          if [ "${rc}" -ne 0 ]; then
-            echo '=== LETZTE 160 BUILDZEILEN ==='
-            tail -n 160 /tmp/build.log
-            exit "${rc}"
-          fi
-          tail -n 40 /tmp/build.log
+          cat /tmp/build-tail.log
+          exit "${rc}"
+      - name: Upload build tail
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: steamrt4-build-tail
+          path: /tmp/build-tail.log
+          if-no-files-found: error
+          retention-days: 1
       - name: Publish diagnostic status
         if: always()
         env:
