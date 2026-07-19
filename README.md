@@ -68,3 +68,21 @@ A successful container build proves only that the pinned tools were downloaded, 
 ## Status
 
 Initial runtime implementation. Live Palworld validation is pending.
+
+## Current container-native runtime – 2026-07-19
+
+The historical launch example above is retained for traceability. The current verified image uses these corrected paths and constraints:
+
+```text
+PROTONPATH=/opt/ge-proton-host
+XDG_RUNTIME_DIR=/tmp/loryvant-xdg-runtime
+DISPLAY=:99
+```
+
+- `/opt/ge-proton-host` keeps the verified GE-Proton11-1 files and removes only the manifest edge that would request pressure-vessel.
+- Debian 13 supplies glibc 2.38 or newer for the GE-Proton host mode.
+- Xvfb supplies an isolated headless X11 display inside the game container.
+- `XDG_RUNTIME_DIR` is created in Pelican's writable `/tmp` tmpfs with mode `0700`.
+- Xvfb listens only on the local Unix socket; TCP listening is disabled.
+- No Docker, AppArmor, Seccomp, capability, kernel or Root-server changes are required.
+- The Egg launches Xvfb inline in its normal startup field and then replaces the shell with `exec umu-run ...`; no server-side startup script is used.
