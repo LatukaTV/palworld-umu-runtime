@@ -87,3 +87,12 @@
 - Pelican-Konsolenbefehle wie `info`, `showplayers`, `save`, `shutdown`, `broadcast`, `kickplayer` und `banplayer` werden intern auf offizielle REST-Endpunkte abgebildet.
 - Die REST-API bleibt containerlokal und erhält keine öffentliche Portzuweisung.
 - Der Watchdog prüft weiterhin alle 15 Sekunden und beendet einen 90 Sekunden anhaltenden Soft-Lock mit Exit-Code `70`.
+
+## 0.1.11 – 2026-07-19
+
+- Den äußeren Container-Userspace auf Valves Steam Linux Runtime 4 umgestellt, die für Proton 11 vorgesehen ist.
+- GE-Proton läuft im passenden SteamRT4-Userspace; der unter Pelican blockierte verschachtelte pressure-vessel-Aufruf bleibt entfallen.
+- Einen eigenen Python-Entrypoint ergänzt, sodass der Pelican-Startup exakt `palworld-umu-start` bleibt.
+- SteamCMD-Updateprüfung in den Runtime-Launcher verlagert.
+- Dauerhafte REST-Abfragen nach der Bereitschaft entfernt; nach dem Fertigmarker entstehen keine automatischen Verwaltungszugriffe mehr.
+- Die gemessene Palworld-Prozessstartzeit wird unmittelbar nach der Bereitschaft ausgegeben.
