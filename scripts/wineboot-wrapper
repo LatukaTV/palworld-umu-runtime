@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set +e
-/usr/bin/wineboot-stable "$@"
+/usr/local/lib/loryvant/wineboot-real "$@"
 rc=$?
 prefix="${WINEPREFIX:-${HOME:-/home/container}/.wine}"
 if [[ -s "${prefix}/system.reg" ]]; then
