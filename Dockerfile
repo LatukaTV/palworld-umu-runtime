@@ -28,8 +28,10 @@ RUN set -eux; \
         curl \
         gnupg; \
     install -d -m 0755 /etc/apt/keyrings /usr/local/lib/loryvant; \
+    install -d -m 0700 /tmp/loryvant-gnupg; \
     curl -fsSL https://dl.winehq.org/wine-builds/winehq.key -o /etc/apt/keyrings/winehq-archive.key; \
-    gpg --show-keys --with-colons /etc/apt/keyrings/winehq-archive.key | grep -qi '76F1A20FF987672F'; \
+    GNUPGHOME=/tmp/loryvant-gnupg gpg --batch --show-keys --with-colons /etc/apt/keyrings/winehq-archive.key | grep -qi '76F1A20FF987672F'; \
+    rm -rf /tmp/loryvant-gnupg; \
     printf '%s\n' \
         'Types: deb' \
         'URIs: https://dl.winehq.org/wine-builds/debian' \
