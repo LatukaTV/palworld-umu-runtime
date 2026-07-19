@@ -118,3 +118,28 @@ The launcher uses this effective Palworld argument profile:
 ```
 
 The legacy flags `-useperfthreads`, `-NoAsyncLoadingThread` and `-UseMultithreadForDS` are deliberately absent. After the first successful RCON response, the launcher checks `Info` every 15 seconds. Six consecutive failures within 90 seconds terminate the complete UMU/Proton process group with launcher exit code `70`, allowing Pelican to detect a real crash instead of displaying a non-responsive process as running.
+
+## Local REST control profile – 2026-07-19
+
+The v0.2.6 launcher uses Palworld's local REST API for readiness, health monitoring and panel-console administration:
+
+```text
+RESTAPIEnabled=True
+RESTAPIPort=8212
+RCONEnabled=False
+```
+
+The API is contacted only at `127.0.0.1:8212` with HTTP Basic authentication and the configured Palworld admin password. The Egg supplies no host allocation for port 8212. The launcher translates common panel commands to REST endpoints, including `info`, `showplayers`, `settings`, `metrics`, `save`, `broadcast`, `kickplayer`, `banplayer`, `unbanplayer`, `shutdown` and `doexit`.
+
+The Palworld process profile is:
+
+```text
+-publiclobby
+-port=<SERVER_PORT>
+-publicport=<SERVER_PORT>
+-players=<MAX_PLAYERS>
+-publicip=<PUBLIC_IP, when configured>
+-logformat=text
+```
+
+Readiness is reached when `/v1/api/info` returns a valid version. The watchdog repeats the same local REST probe every 15 seconds and exits with code `70` after six consecutive failures.
