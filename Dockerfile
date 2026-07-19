@@ -44,6 +44,7 @@ RUN set -eux; \
 
 COPY scripts/pelican-entrypoint /usr/local/bin/pelican-entrypoint
 COPY scripts/palworld-umu-start /usr/local/bin/palworld-umu-start
+COPY scripts/wineboot-wrapper /usr/local/bin/wineboot-wrapper
 COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
 
@@ -51,8 +52,10 @@ RUN set -eux; \
     chmod 0755 \
         /usr/local/bin/pelican-entrypoint \
         /usr/local/bin/palworld-umu-start \
+        /usr/local/bin/wineboot-wrapper \
         /usr/local/bin/palworld-umu-image-preflight \
         /usr/local/bin/palworld-umu-smoke-test; \
+    ln -sf /usr/local/bin/wineboot-wrapper /usr/local/bin/wineboot; \
     python3 -m py_compile \
         /usr/local/bin/pelican-entrypoint \
         /usr/local/bin/palworld-umu-start; \
