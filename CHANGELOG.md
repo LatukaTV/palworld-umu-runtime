@@ -118,3 +118,13 @@
 - Vor SteamCMD-Updates werden vorhandene Workshop-, UE4SS-, DLL- und PAK-Moddateien in rotierenden Archiven gesichert.
 - Die Panelkonsole erhält `mods`, `modcheck`, `modbackup` und `modpaths` für Inventur, Plausibilitätsprüfung, Sicherung und Pfadanzeige.
 - Das Runtime-Image enthält selbst keine PalDefender-, UE4SS- oder sonstigen Fremdmoddateien.
+
+## 0.1.14 – 2026-07-19
+
+- Den gemeinsamen Save-Symlink des Windows-Modservers durch `/home/container/ModdedServer/Pal/Saved` als realen, eigenständigen Save-Pfad ersetzt.
+- Vor der Einmalmigration wird der native Stand unter `/home/container/.loryvant-backups/saves` vollständig archiviert.
+- Vorhandene Welt-, Spieler- und Konfigurationsdaten werden einmalig in den Windows-Save-Pfad kopiert; der native v0.2.8-Rückfallstand bleibt unverändert.
+- `WindowsServer/GameUserSettings.ini` erhält automatisch den vorhandenen Weltordner als `DedicatedServerName`.
+- Der Config-Parser läuft aus `/home/container/ModdedServer` und muss den isolierten Windows-Konfigurationspfad bestätigen.
+- Ein Laufzeit-Preflight prüft Datei-Kopie und atomisches Umbenennen direkt im Windows-Save-Ziel.
+- Der Container-Smoke-Test reproduziert Migration, Weltwahl und atomaren Zielpfad mit einem temporären Teststand.
