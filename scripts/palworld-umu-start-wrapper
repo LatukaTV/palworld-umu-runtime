@@ -84,7 +84,7 @@ def wine_prefix_usable():
     })
     try:
         result = subprocess.run(
-            ["wine64", "cmd", "/c", "exit", "0"],
+            ["wine64", r"C:\windows\system32\cmd.exe", "/c", "exit", "0"],
             env=env,
             cwd=HOME,
             stdout=subprocess.PIPE,

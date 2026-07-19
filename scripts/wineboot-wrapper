@@ -4,16 +4,14 @@ set +e
 prefix="${WINEPREFIX:-${HOME:-/home/container}/.wine}"
 system_reg="${prefix}/system.reg"
 kernel64="${prefix}/drive_c/windows/system32/kernel32.dll"
-kernel32="${prefix}/drive_c/windows/syswow64/kernel32.dll"
 cmd64="${prefix}/drive_c/windows/system32/cmd.exe"
-cmd32="${prefix}/drive_c/windows/syswow64/cmd.exe"
 
 prefix_complete() {
-    [[ -s "${system_reg}" && -s "${kernel64}" && -s "${kernel32}" && -s "${cmd64}" && -s "${cmd32}" ]]
+    [[ -s "${system_reg}" && -s "${kernel64}" && -s "${cmd64}" ]]
 }
 
 report_missing() {
-    for path in "${system_reg}" "${kernel64}" "${kernel32}" "${cmd64}" "${cmd32}"; do
+    for path in "${system_reg}" "${kernel64}" "${cmd64}"; do
         [[ -s "${path}" ]] || printf '[Loryvant] FEHLT: %s\n' "${path}" >&2
     done
 }
@@ -57,14 +55,14 @@ fi
 
 if prefix_complete; then
     if [[ "${boot_rc}" -ne 0 ]]; then
-        printf '[Loryvant] WARNUNG: wineboot meldete Exit %s; beide Prefix-Architekturen wurden vollständig erzeugt.\n' "${boot_rc}" >&2
+        printf '[Loryvant] WARNUNG: wineboot meldete Exit %s; der 64-Bit-Prefix wurde vollständig erzeugt.\n' "${boot_rc}" >&2
     fi
     exit 0
 fi
 
 report_missing
 if [[ -s "${system_reg}" ]]; then
-    printf '[Loryvant] FEHLER: Wine-Prefix ist unvollständig; 64-Bit- oder WoW64-Laufzeitdateien fehlen.\n' >&2
+    printf '[Loryvant] FEHLER: Wine-Prefix ist unvollständig; 64-Bit-Laufzeitdateien fehlen.\n' >&2
     rm -f "${system_reg}"
 fi
 
