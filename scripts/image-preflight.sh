@@ -49,6 +49,8 @@ grep -Fq 'reason = "unusable"' /usr/local/bin/palworld-umu-start || fail "Unbenu
 grep -Fq 'kernel64="${prefix}/drive_c/windows/system32/kernel32.dll"' /usr/local/bin/wineboot-wrapper || fail "Wine64-Vollständigkeitsprüfung fehlt."
 grep -Fq 'cmd64="${prefix}/drive_c/windows/system32/cmd.exe"' /usr/local/bin/wineboot-wrapper || fail "Wine64-Kommandozeilenprüfung fehlt."
 grep -Fq 'prefix_complete()' /usr/local/bin/wineboot-wrapper || fail "Gemeinsame Prefix-Vollständigkeitsprüfung fehlt."
+grep -Fq 'prefix_usable()' /usr/local/bin/wineboot-wrapper || fail "Funktionale Prefix-Bereitschaftsprüfung fehlt."
+grep -Fq "/usr/local/bin/wine64 'C:\windows\system32\cmd.exe' /c exit 0" /usr/local/bin/wineboot-wrapper || fail "Wine64-Bereitschaftsprobe fehlt."
 grep -Fq 'SAVE_ROOT = SERVER_ROOT / "Pal/Saved"' /usr/local/bin/palworld-umu-start-core || fail "Eigenständiger Windows-Save-Pfad fehlt."
 grep -Fq 'prepare_independent_saved()' /usr/local/bin/palworld-umu-start-core || fail "Save-Migration fehlt."
 grep -Fq 'Aktive Welt für WindowsServer' /usr/local/bin/palworld-umu-start-core || fail "DedicatedServerName-Zuordnung fehlt."
@@ -61,4 +63,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, nativer Wine64-Prefix-Test, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, ausführbarer Wine64-Prefix, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
