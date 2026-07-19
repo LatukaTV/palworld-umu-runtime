@@ -20,6 +20,7 @@ trap cleanup EXIT
 python3 --version
 wine64 --version
 palworld-umu-start --self-test
+/usr/local/bin/palworld-umu-start-core --self-test
 
 python3 - <<'PY'
 import importlib.machinery
@@ -28,55 +29,82 @@ import shutil
 import tempfile
 from pathlib import Path
 
-loader = importlib.machinery.SourceFileLoader("launcher", "/usr/local/bin/palworld-umu-start")
-spec = importlib.util.spec_from_loader(loader.name, loader)
-launcher = importlib.util.module_from_spec(spec)
-loader.exec_module(launcher)
+
+def load(name, path):
+    loader = importlib.machinery.SourceFileLoader(name, path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+core = load("launcher_core", "/usr/local/bin/palworld-umu-start-core")
 root = Path(tempfile.mkdtemp(prefix="loryvant-save-smoke-"))
 try:
-    launcher.HOME = root
-    launcher.SERVER_ROOT = root / "ModdedServer"
-    launcher.EXE = launcher.SERVER_ROOT / "Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
-    launcher.WIN64 = launcher.EXE.parent
-    launcher.DEFAULT_INI = launcher.SERVER_ROOT / "DefaultPalWorldSettings.ini"
-    launcher.NATIVE_SAVE_ROOT = root / "Pal/Saved"
-    launcher.SAVE_ROOT = launcher.SERVER_ROOT / "Pal/Saved"
-    launcher.SAVE_GAMES = launcher.SAVE_ROOT / "SaveGames"
-    launcher.CONFIG_DIR = launcher.SAVE_ROOT / "Config/WindowsServer"
-    launcher.CONFIG = launcher.CONFIG_DIR / "PalWorldSettings.ini"
-    launcher.GAME_USER_SETTINGS = launcher.CONFIG_DIR / "GameUserSettings.ini"
-    launcher.LINUX_CONFIG = launcher.SAVE_ROOT / "Config/LinuxServer/PalWorldSettings.ini"
-    launcher.LINUX_GAME_USER_SETTINGS = launcher.SAVE_ROOT / "Config/LinuxServer/GameUserSettings.ini"
-    launcher.MODS_ROOT = root / "Mods"
-    launcher.BACKUP_ROOT = root / ".loryvant-backups"
-    launcher.MOD_BACKUP_ROOT = launcher.BACKUP_ROOT / "mods"
-    launcher.SAVE_BACKUP_ROOT = launcher.BACKUP_ROOT / "saves"
-    launcher.MIGRATION_MARKER = launcher.SAVE_ROOT / ".loryvant-v0.2.10-migrated"
+    core.HOME = root
+    core.SERVER_ROOT = root / "ModdedServer"
+    core.EXE = core.SERVER_ROOT / "Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
+    core.WIN64 = core.EXE.parent
+    core.DEFAULT_INI = core.SERVER_ROOT / "DefaultPalWorldSettings.ini"
+    core.NATIVE_SAVE_ROOT = root / "Pal/Saved"
+    core.SAVE_ROOT = core.SERVER_ROOT / "Pal/Saved"
+    core.SAVE_GAMES = core.SAVE_ROOT / "SaveGames"
+    core.CONFIG_DIR = core.SAVE_ROOT / "Config/WindowsServer"
+    core.CONFIG = core.CONFIG_DIR / "PalWorldSettings.ini"
+    core.GAME_USER_SETTINGS = core.CONFIG_DIR / "GameUserSettings.ini"
+    core.LINUX_CONFIG = core.SAVE_ROOT / "Config/LinuxServer/PalWorldSettings.ini"
+    core.LINUX_GAME_USER_SETTINGS = core.SAVE_ROOT / "Config/LinuxServer/GameUserSettings.ini"
+    core.MODS_ROOT = root / "Mods"
+    core.BACKUP_ROOT = root / ".loryvant-backups"
+    core.MOD_BACKUP_ROOT = core.BACKUP_ROOT / "mods"
+    core.SAVE_BACKUP_ROOT = core.BACKUP_ROOT / "saves"
+    core.MIGRATION_MARKER = core.SAVE_ROOT / ".loryvant-v0.2.10-migrated"
 
     world = "ABCDEF0123456789"
-    world_dir = launcher.NATIVE_SAVE_ROOT / "SaveGames/0" / world
+    world_dir = core.NATIVE_SAVE_ROOT / "SaveGames/0" / world
     world_dir.mkdir(parents=True)
     (world_dir / "Level.sav").write_bytes(b"level")
-    linux_config = launcher.NATIVE_SAVE_ROOT / "Config/LinuxServer"
+    linux_config = core.NATIVE_SAVE_ROOT / "Config/LinuxServer"
     linux_config.mkdir(parents=True)
     (linux_config / "PalWorldSettings.ini").write_text("x" * 1300)
     (linux_config / "GameUserSettings.ini").write_text(
         "[/Script/Pal.PalGameLocalSettings]\nDedicatedServerName=" + world + "\n"
     )
-    launcher.prepare_directories()
-    launcher.prepare_independent_saved()
-    assert not launcher.SAVE_ROOT.is_symlink()
-    launcher.DEFAULT_INI.parent.mkdir(parents=True, exist_ok=True)
-    launcher.DEFAULT_INI.write_text("x" * 1300)
-    launcher.migrate_configuration()
-    selected = launcher.select_world_name()
+    core.prepare_directories()
+    core.prepare_independent_saved()
+    assert not core.SAVE_ROOT.is_symlink()
+    core.DEFAULT_INI.parent.mkdir(parents=True, exist_ok=True)
+    core.DEFAULT_INI.write_text("x" * 1300)
+    core.migrate_configuration()
+    selected = core.select_world_name()
     assert selected == world
-    launcher.write_dedicated_name(selected)
-    launcher.MODS_ROOT.mkdir(parents=True, exist_ok=True)
-    launcher.prepare_storage()
-    assert launcher.read_dedicated_name(launcher.GAME_USER_SETTINGS) == world
-    assert launcher.MIGRATION_MARKER.is_file()
-    print("[runtime-smoke] Save-Migration, DedicatedServerName und atomarer Zielpfad geprüft.")
+    core.write_dedicated_name(selected)
+    core.MODS_ROOT.mkdir(parents=True, exist_ok=True)
+    core.prepare_storage()
+    assert core.read_dedicated_name(core.GAME_USER_SETTINGS) == world
+    assert core.MIGRATION_MARKER.is_file()
+
+    wrapper = load("launcher_wrapper", "/usr/local/bin/palworld-umu-start")
+    wrapper.HOME = root
+    wrapper.SAVE_ROOT = core.SAVE_ROOT
+    wrapper.SAVE_GAMES = core.SAVE_ROOT / "SaveGames/0"
+    wrapper.GAME_USER_SETTINGS = core.GAME_USER_SETTINGS
+    wrapper.BACKUP_ROOT = root / ".loryvant-backups/saves"
+    wrapper.MARKER = wrapper.SAVE_ROOT / ".loryvant-v0.2.12-backup-tree-reset"
+    old_tree = wrapper.SAVE_GAMES / world / "backup"
+    (old_tree / "local/old").mkdir(parents=True)
+    (old_tree / "world/old").mkdir(parents=True)
+    (old_tree / "local/old/LocalData.sav").write_bytes(b"old-local")
+    (old_tree / "world/old/Level.sav").write_bytes(b"old-world")
+    wrapper.reset_backup_tree()
+    fresh = wrapper.SAVE_GAMES / world / "backup"
+    assert (fresh / "local").is_dir()
+    assert (fresh / "world").is_dir()
+    assert wrapper.MARKER.is_file()
+    preserved = list(wrapper.BACKUP_ROOT.glob(f"generated-backup-tree-{world}-*"))
+    assert len(preserved) == 1
+    assert (preserved[0] / "local/old/LocalData.sav").read_bytes() == b"old-local"
+    assert (preserved[0] / "world/old/Level.sav").read_bytes() == b"old-world"
+    print("[runtime-smoke] Save-Migration, Weltzuordnung und Backup-Unterbaum-Reparatur geprüft.")
 finally:
     shutil.rmtree(root, ignore_errors=True)
 PY
@@ -114,4 +142,4 @@ if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
         "${WINEBOOT_RC}" "${WINESERVER_RC}"
 fi
 
-printf '[runtime-smoke] OK: Wine64-Prefix, Save-Migration, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
+printf '[runtime-smoke] OK: Wine64-Prefix, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
