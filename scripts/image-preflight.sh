@@ -24,13 +24,18 @@ for command_name in python3 wine64 wineboot wineserver Xvfb dbus-run-session pal
     command -v "${command_name}" >/dev/null || fail "${command_name} fehlt."
 done
 [[ -x /usr/local/bin/palworld-umu-start-core ]] || fail "palworld-umu-start-core fehlt."
-wine64 --version
+[[ "$(wine64 --version)" == "wine-11.13" ]] || fail "WineHQ 11.13 fehlt."
+[[ "$(readlink -f /usr/local/bin/wine64)" == "/opt/wine-devel/bin/wine" ]] || fail "wine64 zeigt auf eine unerwartete Laufzeit."
+[[ "$(readlink -f /usr/local/bin/wineserver)" == "/opt/wine-devel/bin/wineserver" ]] || fail "wineserver zeigt auf eine unerwartete Laufzeit."
+[[ -x /usr/local/lib/loryvant/wineboot-real ]] || fail "WineHQ-wineboot fehlt."
 [[ -s /etc/machine-id ]] || fail "/etc/machine-id fehlt."
 
 step "Launcher"
-[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.12" ]] || fail "Launcher-Version stimmt nicht."
+[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.13" ]] || fail "Launcher-Version stimmt nicht."
 palworld-umu-start --self-test
 /usr/local/bin/palworld-umu-start-core --self-test
+grep -Fq 'EXPECTED_WINE = "wine-11.13"' /usr/local/bin/palworld-umu-start || fail "Wine-Version-Pinning fehlt."
+grep -Fq 'wine-prefix-before-' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Migration fehlt."
 grep -Fq 'SAVE_ROOT = SERVER_ROOT / "Pal/Saved"' /usr/local/bin/palworld-umu-start-core || fail "Eigenständiger Windows-Save-Pfad fehlt."
 grep -Fq 'prepare_independent_saved()' /usr/local/bin/palworld-umu-start-core || fail "Save-Migration fehlt."
 grep -Fq 'Aktive Welt für WindowsServer' /usr/local/bin/palworld-umu-start-core || fail "DedicatedServerName-Zuordnung fehlt."
@@ -43,4 +48,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: Wine64, Xvfb, D-Bus, Backup-Unterbaum-Reparatur, isolierter Save-Pfad, Launcher und Pelican-Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: WineHQ 11.13, Prefix-Migration, Xvfb, D-Bus, Backup-Unterbaum-Reparatur, isolierter Save-Pfad, Launcher und Pelican-Entrypoint geprüft.\n'
