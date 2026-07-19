@@ -156,6 +156,7 @@ cat /tmp/loryvant-wineboot-smoke.log || true
     fail "Wine64-Prefix wurde nicht initialisiert; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
 [[ -s "${SMOKE_PREFIX}/drive_c/windows/system32/kernel32.dll" ]] || \
     fail "Wine64-Prefix enthält keine kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+set +e
 timeout 30 env \
     HOME=/home/container \
     USER=container \
@@ -163,9 +164,13 @@ timeout 30 env \
     XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
-    WINEDEBUG=-all \
-    dbus-run-session -- wine64 cmd /c exit 0 >> /tmp/loryvant-wineboot-smoke.log 2>&1 || \
-    fail "Wine64-Prefix ist nicht funktional ausführbar."
+    WINEDEBUG=+loaddll,+module \
+    dbus-run-session -- wine64 cmd.exe /c ver >> /tmp/loryvant-wine-process-smoke.log 2>&1
+WINE_PROCESS_RC=$?
+set -e
+cat /tmp/loryvant-wine-process-smoke.log || true
+[[ "${WINE_PROCESS_RC}" -eq 0 ]] || \
+    fail "Wine64-Prefix ist nicht funktional ausführbar; wine-process=${WINE_PROCESS_RC}."
 if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
     printf '[runtime-smoke] WARNUNG: Prefix funktional; wineboot=%s, wineserver=%s.\n' \
         "${WINEBOOT_RC}" "${WINESERVER_RC}"
