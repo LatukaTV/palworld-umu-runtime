@@ -6,27 +6,36 @@ fail() {
     exit 1
 }
 
+cleanup() {
+    [[ -z "${XVFB_PID:-}" ]] || kill "${XVFB_PID}" >/dev/null 2>&1 || true
+    rm -rf /tmp/loryvant-wine-smoke /tmp/loryvant-xdg-smoke /tmp/.X98-lock /tmp/.X11-unix/X98
+}
+trap cleanup EXIT
+
 /usr/local/bin/palworld-umu-image-preflight
 python3 --version
+wine64 --version
 palworld-umu-start --self-test
 
-python3 - <<'PY'
-import base64
-import json
-import urllib.request
+mkdir -p /tmp/loryvant-xdg-smoke
+chmod 0700 /tmp/loryvant-xdg-smoke
+DISPLAY=:98 XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke Xvfb :98 -screen 0 800x600x24 -nolisten tcp -ac -noreset >/tmp/loryvant-xvfb-smoke.log 2>&1 &
+XVFB_PID=$!
+for _ in $(seq 1 100); do
+    [[ -S /tmp/.X11-unix/X98 ]] && kill -0 "${XVFB_PID}" 2>/dev/null && break
+    sleep .1
+done
+[[ -S /tmp/.X11-unix/X98 ]] || { cat /tmp/loryvant-xvfb-smoke.log >&2 || true; fail "Xvfb-Socket fehlt."; }
 
-assert base64.b64encode(b"admin:test").decode("ascii") == "YWRtaW46dGVzdA=="
-assert json.loads('{"version":"v1"}')["version"] == "v1"
-request = urllib.request.Request("http://127.0.0.1:8212/v1/api/info")
-assert request.full_url.endswith("/v1/api/info")
-print("[runtime-smoke] REST-Clientmodule verfügbar.")
-PY
+timeout 120 env \
+    HOME=/home/container \
+    USER=container \
+    DISPLAY=:98 \
+    XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke \
+    WINEPREFIX=/tmp/loryvant-wine-smoke \
+    WINEARCH=win64 \
+    WINEDEBUG=-all \
+    dbus-run-session -- wineboot -u
+[[ -s /tmp/loryvant-wine-smoke/system.reg ]] || fail "Wine64-Prefix wurde nicht initialisiert."
 
-if [[ -e /home/container/Pal/Binaries/Linux/PalServer-Linux-Shipping ]]; then
-    [[ -x /home/container/Pal/Binaries/Linux/PalServer-Linux-Shipping ]] || \
-        fail "Eingehängter nativer Palworld-Server ist nicht ausführbar."
-else
-    printf '[runtime-smoke] INFO: Spielserverprüfung übersprungen; kein Pelican-Servervolume eingehängt.\n'
-fi
-
-printf '[runtime-smoke] OK: nativer Linux-Launcher, REST-Client und Entrypoint sind ausführbar.\n'
+printf '[runtime-smoke] OK: Wine64-Prefix, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
