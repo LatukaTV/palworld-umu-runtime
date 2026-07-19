@@ -2,8 +2,8 @@
 
 FROM ghcr.io/parkervcp/steamcmd:debian
 
-LABEL org.opencontainers.image.title="Palworld Native Linux Runtime"
-LABEL org.opencontainers.image.description="Pelican Palworld native Linux dedicated server runtime"
+LABEL org.opencontainers.image.title="Palworld Windows Mod Runtime"
+LABEL org.opencontainers.image.description="Pelican Palworld Windows dedicated server runtime with Wine and generic server-mod support"
 LABEL org.opencontainers.image.source="https://github.com/LatukaTV/palworld-umu-runtime"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -19,11 +19,27 @@ ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN set -eux; \
     arch="${TARGETARCH:-amd64}"; \
     test "${arch}" = "amd64"; \
+    dpkg --add-architecture i386; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ca-certificates \
+        cabextract \
+        dbus-x11 \
+        jq \
         procps \
-        python3; \
+        python3 \
+        tar \
+        wine \
+        wine32:i386 \
+        wine64 \
+        winbind \
+        xvfb; \
+    dbus-uuidgen --ensure=/etc/machine-id; \
+    mkdir -p /var/lib/dbus; \
+    ln -sf /etc/machine-id /var/lib/dbus/machine-id; \
+    ln -sf /usr/bin/wine-stable /usr/local/bin/wine64; \
+    ln -sf /usr/bin/wineboot-stable /usr/local/bin/wineboot; \
+    ln -sf /usr/bin/wineserver-stable /usr/local/bin/wineserver; \
     rm -rf /var/lib/apt/lists/*
 
 COPY scripts/pelican-entrypoint /usr/local/bin/pelican-entrypoint
