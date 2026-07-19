@@ -44,6 +44,7 @@ RUN set -eux; \
         zstd; \
     glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"; \
     dpkg --compare-versions "${glibc_version}" ge 2.38; \
+    mkdir -p /opt; \
     printf 'steamrt4\n' > /opt/loryvant-steamrt4-base; \
     rm -rf /var/lib/apt/lists/*
 
