@@ -39,8 +39,19 @@ trap 'rc=$?; printf "[runtime-smoke] FEHLER: Zeile %s, Exit %s, Befehl: %s\n" "$
 
 run_check "Python-Aufruf" python3 --version
 run_check "UMU-CLI-Aufruf" umu-run --version
-run_check "RCON-CLI-Aufruf" rcon --help
 run_check "Launcher-Selbsttest" palworld-umu-start --self-test
+
+step "Python-REST-Client"
+python3 - <<'PY'
+import base64
+import json
+import urllib.request
+
+assert base64.b64encode(b"admin:test").decode("ascii") == "YWRtaW46dGVzdA=="
+assert json.loads('{"version":"v1"}')["version"] == "v1"
+assert urllib.request.Request("http://127.0.0.1:8212/v1/api/info").full_url.endswith("/v1/api/info")
+print("[runtime-smoke] REST-Clientmodule verfügbar.")
+PY
 
 step "Headless-X11-Start als Containerbenutzer"
 rm -rf "${XDG_TEST_DIR}" /tmp/.X99-lock /tmp/.X11-unix/X99
@@ -68,8 +79,6 @@ kill -0 "${XVFB_PID}" 2>/dev/null || {
 }
 printf '[runtime-smoke] X11-Socket bereit: %s\n' /tmp/.X11-unix/X99
 
-# SteamCMD wird von Pelican in das persistente Servervolume installiert. Im
-# nackten GHCR-Image ist dieses Volume nicht vorhanden.
 if [[ -e /home/container/steamcmd/steamcmd.sh ]]; then
     step "SteamCMD im eingehängten Pelican-Servervolume"
     [[ -x /home/container/steamcmd/steamcmd.sh ]] || \
@@ -78,4 +87,4 @@ else
     printf '[runtime-smoke] INFO: SteamCMD-Prüfung übersprungen; kein Pelican-Servervolume eingehängt.\n'
 fi
 
-printf '[runtime-smoke] OK: Launcher, UMU, GE-Proton11-1 und Headless-X11 sind ausführbar.\n'
+printf '[runtime-smoke] OK: Launcher, lokale REST-Steuerung, UMU, GE-Proton11-1 und Headless-X11 sind ausführbar.\n'
