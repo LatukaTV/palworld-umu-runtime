@@ -194,7 +194,7 @@ def monitor():
         if server is not None and server.poll() is not None: return
         status,body=rest("info")
         if status==200 and isinstance(body,dict) and body.get("version"):
-            out(f"Palworld ist bereit: {body.get('version')} | {body.get('servername','Server')}");break
+            out("Palworld ist bereit.");out(f"REST-Info: {body.get('version')} | {body.get('servername','Server')}");break
         now=time.monotonic()
         if now>=ready_deadline: terminate_server(f"REST-API wurde innerhalb von {READY_TIMEOUT} Sekunden nicht bereit.",62);return
         if now>=next_status:
