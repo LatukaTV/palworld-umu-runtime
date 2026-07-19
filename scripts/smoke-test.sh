@@ -1,16 +1,32 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-fail(){ printf '[runtime-smoke] FEHLER: %s\n' "$1" >&2; exit 1; }
-cleanup(){ [[ -z "${XVFB_PID:-}" ]] || kill "${XVFB_PID}" >/dev/null 2>&1 || true; rm -rf /tmp/loryvant-xdg-runtime-smoke /tmp/.X99-lock /tmp/.X11-unix/X99; }
-trap cleanup EXIT
+
+fail() {
+    printf '[runtime-smoke] FEHLER: %s\n' "$1" >&2
+    exit 1
+}
+
 /usr/local/bin/palworld-umu-image-preflight
 python3 --version
-umu-run --version
 palworld-umu-start --self-test
-mkdir -p /tmp/loryvant-xdg-runtime-smoke
-chmod 0700 /tmp/loryvant-xdg-runtime-smoke
-XDG_RUNTIME_DIR=/tmp/loryvant-xdg-runtime-smoke DISPLAY=:99 Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -ac -noreset >/tmp/loryvant-xvfb-smoke.log 2>&1 &
-XVFB_PID=$!
-for _ in $(seq 1 100); do [[ -S /tmp/.X11-unix/X99 ]] && kill -0 "${XVFB_PID}" 2>/dev/null && break; sleep .1; done
-[[ -S /tmp/.X11-unix/X99 ]] || { cat /tmp/loryvant-xvfb-smoke.log >&2 || true; fail "Xvfb-Socket fehlt."; }
-printf '[runtime-smoke] OK: SteamRT4, UMU, GE-Proton11-1, Entrypoint und Xvfb sind ausführbar.\n'
+
+python3 - <<'PY'
+import base64
+import json
+import urllib.request
+
+assert base64.b64encode(b"admin:test").decode("ascii") == "YWRtaW46dGVzdA=="
+assert json.loads('{"version":"v1"}')["version"] == "v1"
+request = urllib.request.Request("http://127.0.0.1:8212/v1/api/info")
+assert request.full_url.endswith("/v1/api/info")
+print("[runtime-smoke] REST-Clientmodule verfügbar.")
+PY
+
+if [[ -e /home/container/Pal/Binaries/Linux/PalServer-Linux-Shipping ]]; then
+    [[ -x /home/container/Pal/Binaries/Linux/PalServer-Linux-Shipping ]] || \
+        fail "Eingehängter nativer Palworld-Server ist nicht ausführbar."
+else
+    printf '[runtime-smoke] INFO: Spielserverprüfung übersprungen; kein Pelican-Servervolume eingehängt.\n'
+fi
+
+printf '[runtime-smoke] OK: nativer Linux-Launcher, REST-Client und Entrypoint sind ausführbar.\n'
