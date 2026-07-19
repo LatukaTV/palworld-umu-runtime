@@ -1,26 +1,26 @@
 # syntax=docker/dockerfile:1.7
 
-FROM ghcr.io/parkervcp/steamcmd:debian
+FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.title="Palworld Windows Mod Runtime"
 LABEL org.opencontainers.image.description="Pelican Palworld Windows dedicated server runtime with WineHQ and generic server-mod support"
 LABEL org.opencontainers.image.source="https://github.com/LatukaTV/palworld-umu-runtime"
 LABEL org.opencontainers.image.licenses="MIT"
 
-USER root
-
 ARG TARGETARCH
-ARG WINEHQ_VERSION=11.13~bookworm-1
+ARG WINEHQ_VERSION=11.13~trixie-1
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/container
 ENV USER=container
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
     arch="${TARGETARCH:-amd64}"; \
     test "${arch}" = "amd64"; \
-    test "$(. /etc/os-release; printf '%s' "${VERSION_CODENAME}")" = "bookworm"; \
+    test "$(. /etc/os-release; printf '%s' "${VERSION_CODENAME}")" = "trixie"; \
     dpkg --add-architecture i386; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -33,17 +33,20 @@ RUN set -eux; \
     printf '%s\n' \
         'Types: deb' \
         'URIs: https://dl.winehq.org/wine-builds/debian' \
-        'Suites: bookworm' \
+        'Suites: trixie' \
         'Components: main' \
         'Architectures: amd64 i386' \
         'Signed-By: /etc/apt/keyrings/winehq-archive.key' \
-        > /etc/apt/sources.list.d/winehq-bookworm.sources; \
+        > /etc/apt/sources.list.d/winehq-trixie.sources; \
     apt-get update; \
     apt-get install -y --install-recommends \
         "winehq-devel=${WINEHQ_VERSION}" \
+        bash \
         cabextract \
         dbus-x11 \
         jq \
+        lib32gcc-s1 \
+        lib32stdc++6 \
         procps \
         python3 \
         tar \
@@ -52,6 +55,11 @@ RUN set -eux; \
     test "$(/opt/wine-devel/bin/wine --version)" = 'wine-11.13'; \
     test -x /opt/wine-devel/bin/wineboot; \
     test -x /opt/wine-devel/bin/wineserver; \
+    test -e /usr/lib32/libstdc++.so.6; \
+    test -e /usr/lib32/libgcc_s.so.1; \
+    getent group container >/dev/null || groupadd --gid 1000 container; \
+    id container >/dev/null 2>&1 || useradd --uid 1000 --gid container --home-dir /home/container --create-home --shell /bin/bash container; \
+    install -d -o container -g container -m 0755 /home/container; \
     dbus-uuidgen --ensure=/etc/machine-id; \
     mkdir -p /var/lib/dbus; \
     ln -sf /etc/machine-id /var/lib/dbus/machine-id; \
