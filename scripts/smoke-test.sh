@@ -146,9 +146,10 @@ timeout 120 env \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=-all \
-    dbus-run-session -- wineboot -u > /tmp/loryvant-wineboot-smoke.log 2>&1
+    dbus-run-session -- bash -lc 'wineboot -u; rc=$?; wineserver -k >/dev/null 2>&1 || true; wineserver -w >/dev/null 2>&1 || true; exit "$rc"' \
+    > /tmp/loryvant-wineboot-smoke.log 2>&1
 WINEBOOT_RC=$?
-timeout 120 env WINEPREFIX="${SMOKE_PREFIX}" wineserver -w >> /tmp/loryvant-wineboot-smoke.log 2>&1
+timeout 30 env WINEPREFIX="${SMOKE_PREFIX}" wineserver -w >> /tmp/loryvant-wineboot-smoke.log 2>&1
 WINESERVER_RC=$?
 set -e
 cat /tmp/loryvant-wineboot-smoke.log || true
