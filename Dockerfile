@@ -15,6 +15,7 @@ ENV HOME=/home/container
 ENV USER=container
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
+ENV WINEDLLPATH=/opt/wine-devel/lib/wine
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \

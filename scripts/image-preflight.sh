@@ -31,6 +31,7 @@ for command_name in python3 wine64 wineboot wineserver Xvfb dbus-run-session pal
 done
 [[ -x /usr/local/bin/palworld-umu-start-core ]] || fail "palworld-umu-start-core fehlt."
 [[ -x /opt/wine-devel/lib/wine/x86_64-unix/wine ]] || fail "WineHQ-64-Bit-Loader fehlt."
+[[ "${WINEDLLPATH:-}" == "/opt/wine-devel/lib/wine" ]] || fail "WineHQ-DLL-Suchpfad fehlt."
 [[ "$(wine64 --version)" == "wine-11.13" ]] || fail "WineHQ 11.13 fehlt."
 [[ "$(readlink -f /usr/local/bin/wine64)" == "/opt/wine-devel/lib/wine/x86_64-unix/wine" ]] || fail "wine64 zeigt auf eine unerwartete Laufzeit."
 [[ "$(readlink -f /usr/local/bin/wineserver)" == "/opt/wine-devel/bin/wineserver" ]] || fail "wineserver zeigt auf eine unerwartete Laufzeit."
