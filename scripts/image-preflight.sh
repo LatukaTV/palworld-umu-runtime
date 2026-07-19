@@ -19,14 +19,15 @@ printf '[image-preflight] uname=%s uid=%s gid=%s user=%s HOME=%s\n' \
 [[ "$(id -u)" -ne 0 ]] || fail "Preflight läuft als root."
 [[ "${HOME:-}" == "/home/container" ]] || fail "Unerwartetes HOME."
 
-step "Native Laufzeit"
-for command_name in python3 getconf palworld-umu-start pelican-entrypoint; do
+step "Wine-Modlaufzeit"
+for command_name in python3 wine64 wineboot Xvfb dbus-run-session palworld-umu-start pelican-entrypoint; do
     command -v "${command_name}" >/dev/null || fail "${command_name} fehlt."
 done
+wine64 --version
+[[ -s /etc/machine-id ]] || fail "/etc/machine-id fehlt."
 
 step "Launcher"
-[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.8" ]] || \
-    fail "Launcher-Version stimmt nicht."
+[[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.9" ]] || fail "Launcher-Version stimmt nicht."
 palworld-umu-start --self-test
 
 step "Entrypoint"
@@ -34,4 +35,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: nativer Linux-Launcher und Pelican-Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Wine64, Xvfb, D-Bus, Launcher und Pelican-Entrypoint geprüft.\n'
