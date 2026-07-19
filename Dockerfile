@@ -43,24 +43,28 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY scripts/pelican-entrypoint /usr/local/bin/pelican-entrypoint
-COPY scripts/palworld-umu-start /usr/local/bin/palworld-umu-start
+COPY scripts/palworld-umu-start /usr/local/bin/palworld-umu-start-core
+COPY scripts/palworld-umu-start-wrapper /usr/local/bin/palworld-umu-start
 COPY scripts/wineboot-wrapper /usr/local/bin/wineboot-wrapper
 COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
 
 RUN set -eux; \
+    sed -i 's/VERSION = "0.2.10"/VERSION = "0.2.12"/' /usr/local/bin/palworld-umu-start-core; \
     chmod 0755 \
         /usr/local/bin/pelican-entrypoint \
         /usr/local/bin/palworld-umu-start \
+        /usr/local/bin/palworld-umu-start-core \
         /usr/local/bin/wineboot-wrapper \
         /usr/local/bin/palworld-umu-image-preflight \
         /usr/local/bin/palworld-umu-smoke-test; \
     ln -sf /usr/local/bin/wineboot-wrapper /usr/local/bin/wineboot; \
     python3 -m py_compile \
         /usr/local/bin/pelican-entrypoint \
-        /usr/local/bin/palworld-umu-start; \
+        /usr/local/bin/palworld-umu-start \
+        /usr/local/bin/palworld-umu-start-core; \
     rm -rf /usr/local/bin/__pycache__; \
-    /usr/local/bin/palworld-umu-start --version
+    test "$(/usr/local/bin/palworld-umu-start --version)" = "palworld-umu-start 0.2.12"
 
 USER container
 WORKDIR /home/container
