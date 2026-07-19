@@ -18,7 +18,7 @@ trap cleanup EXIT
 
 /usr/local/bin/palworld-umu-image-preflight
 python3 --version
-wine64 --version
+[[ "$(wine64 --version)" == "wine-11.13" ]] || fail "WineHQ 11.13 fehlt."
 palworld-umu-start --self-test
 /usr/local/bin/palworld-umu-start-core --self-test
 
@@ -90,6 +90,20 @@ try:
     wrapper.GAME_USER_SETTINGS = core.GAME_USER_SETTINGS
     wrapper.BACKUP_ROOT = root / ".loryvant-backups/saves"
     wrapper.MARKER = wrapper.SAVE_ROOT / ".loryvant-v0.2.12-backup-tree-reset"
+    wrapper.WINE_PREFIX = root / ".wine-palworld-modded"
+    wrapper.WINE_BACKUP_ROOT = root / ".loryvant-backups/wine-prefixes"
+    wrapper.WINE_MARKER = wrapper.WINE_PREFIX / ".loryvant-wine-version"
+
+    wrapper.WINE_PREFIX.mkdir(parents=True)
+    (wrapper.WINE_PREFIX / "system.reg").write_text("old-prefix")
+    wrapper.WINE_MARKER.write_text("wine-10.0\n")
+    wrapper.prepare_wine_runtime()
+    assert wrapper.WINE_MARKER.read_text().strip() == "wine-11.13"
+    assert not (wrapper.WINE_PREFIX / "system.reg").exists()
+    old_prefixes = list(wrapper.WINE_BACKUP_ROOT.glob("wine-prefix-before-wine-11.13-*"))
+    assert len(old_prefixes) == 1
+    assert (old_prefixes[0] / "system.reg").read_text() == "old-prefix"
+
     old_tree = wrapper.SAVE_GAMES / world / "backup"
     (old_tree / "local/old").mkdir(parents=True)
     (old_tree / "world/old").mkdir(parents=True)
@@ -104,7 +118,7 @@ try:
     assert len(preserved) == 1
     assert (preserved[0] / "local/old/LocalData.sav").read_bytes() == b"old-local"
     assert (preserved[0] / "world/old/Level.sav").read_bytes() == b"old-world"
-    print("[runtime-smoke] Save-Migration, Weltzuordnung und Backup-Unterbaum-Reparatur geprüft.")
+    print("[runtime-smoke] Wine-Prefix-Migration, Save-Migration, Weltzuordnung und Backup-Unterbaum-Reparatur geprüft.")
 finally:
     shutil.rmtree(root, ignore_errors=True)
 PY
@@ -142,4 +156,4 @@ if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
         "${WINEBOOT_RC}" "${WINESERVER_RC}"
 fi
 
-printf '[runtime-smoke] OK: Wine64-Prefix, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
+printf '[runtime-smoke] OK: WineHQ 11.13, Prefix-Migration, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
