@@ -1,0 +1,30 @@
+name: steamrt4-diagnostic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Pull SteamRT4 SDK
+        run: docker pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest
+      - name: Inspect SteamRT4 SDK
+        run: |
+          docker image inspect registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest --format 'ARCH={{.Architecture}} USER={{.Config.User}} ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}}'
+          docker run --rm --entrypoint /bin/bash registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest -lc '
+            set -eux
+            uname -m
+            id
+            cat /etc/os-release
+            command -v apt-get
+            command -v dpkg
+            command -v getconf
+            getconf GNU_LIBC_VERSION
+            command -v useradd || true
+          '
