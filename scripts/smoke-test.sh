@@ -146,8 +146,31 @@ timeout 120 env \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=-all \
-    dbus-run-session -- bash -lc 'wineboot -u; rc=$?; wineserver -k >/dev/null 2>&1 || true; wineserver -w >/dev/null 2>&1 || true; exit "$rc"' \
-    > /tmp/loryvant-wineboot-smoke.log 2>&1
+    dbus-run-session -- bash -lc '
+        wineboot -u &
+        boot_pid=$!
+        for _ in $(seq 1 1200); do
+            if [[ -s "${WINEPREFIX}/system.reg" && -s "${WINEPREFIX}/drive_c/windows/system32/kernel32.dll" ]]; then
+                sleep 1
+                wineserver -k >/dev/null 2>&1 || true
+                wait "${boot_pid}"
+                rc=$?
+                wineserver -w >/dev/null 2>&1 || true
+                exit "${rc}"
+            fi
+            if ! kill -0 "${boot_pid}" 2>/dev/null; then
+                wait "${boot_pid}"
+                rc=$?
+                wineserver -k >/dev/null 2>&1 || true
+                wineserver -w >/dev/null 2>&1 || true
+                exit "${rc}"
+            fi
+            sleep .1
+        done
+        wineserver -k >/dev/null 2>&1 || true
+        wait "${boot_pid}" >/dev/null 2>&1 || true
+        exit 124
+    ' > /tmp/loryvant-wineboot-smoke.log 2>&1
 WINEBOOT_RC=$?
 timeout 30 env WINEPREFIX="${SMOKE_PREFIX}" wineserver -w >> /tmp/loryvant-wineboot-smoke.log 2>&1
 WINESERVER_RC=$?
@@ -158,7 +181,7 @@ cat /tmp/loryvant-wineboot-smoke.log || true
 [[ -s "${SMOKE_PREFIX}/drive_c/windows/system32/kernel32.dll" ]] || \
     fail "Wine64-Prefix enthält keine kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
 set +e
-timeout 30 env \
+timeout 45 env \
     HOME=/home/container \
     USER=container \
     DISPLAY=:98 \
@@ -166,8 +189,17 @@ timeout 30 env \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=+loaddll,+module \
-    dbus-run-session -- bash -lc 'wine64 cmd.exe /c ver; rc=$?; wineserver -k >/dev/null 2>&1 || true; exit "$rc"' \
-    > /tmp/loryvant-wine-process-smoke.log 2>&1
+    dbus-run-session -- bash -lc '
+        timeout 30 wine64 cmd.exe /c ver
+        rc=$?
+        if [[ "${rc}" -eq 124 ]]; then
+            printf "[runtime-smoke] Wine-Prozessdiagnose nach Timeout:\n" >&2
+            ps -eo pid,ppid,stat,comm,args >&2 || true
+        fi
+        wineserver -k >/dev/null 2>&1 || true
+        wineserver -w >/dev/null 2>&1 || true
+        exit "${rc}"
+    ' > /tmp/loryvant-wine-process-smoke.log 2>&1
 WINE_PROCESS_RC=$?
 set -e
 cat /tmp/loryvant-wine-process-smoke.log || true
