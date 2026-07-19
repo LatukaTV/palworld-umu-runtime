@@ -61,3 +61,11 @@
 - Image-Preflight verlangt jetzt das Programm `Xvfb`.
 - Runtime-Smoke-Test startet Xvfb als unprivilegierter `container`-Benutzer, legt ein XDG-Laufzeitverzeichnis mit Modus `0700` an und prüft den erzeugten X11-Socket.
 - Der Egg-Startup setzt weiterhin direkt `exec umu-run`; Xvfb wird ausschließlich als Hintergrundprozess im normalen Startup-Feld gestartet.
+
+## 0.1.8 – 2026-07-19
+
+- Den gesamten Start-, Parser-, Save-, UE4SS-, Xvfb- und RCON-Ablauf in den image-internen Befehl `/usr/local/bin/palworld-umu-start` verlagert.
+- Das Egg benötigt dadurch nur noch den kurzen Startup-Befehl `palworld-umu-start`.
+- Der Launcher maskiert Passwortwerte aus der Parserausgabe, prüft die Runtime, startet Headless-X11, leitet Pelican-Konsolenbefehle an RCON weiter und überwacht die RCON-Bereitschaft.
+- Shell-Arithmetik und Globbing befinden sich nicht mehr im Egg-Startup-Feld; damit kann Wings den Befehl nicht mehr durch Dateinamenexpansion beschädigen.
+- Image-Preflight und Runtime-Smoke-Test prüfen Launcher-Version, Ausführbarkeit und Selbsttest vor der Veröffentlichung.

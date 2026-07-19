@@ -119,11 +119,17 @@ RUN set -eux; \
         /home/container/.local \
         /home/container/.umu
 
+COPY scripts/palworld-umu-start /usr/local/bin/palworld-umu-start
 COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
-RUN chmod 0755 \
+RUN set -eux; \
+    chmod 0755 \
+        /usr/local/bin/palworld-umu-start \
         /usr/local/bin/palworld-umu-image-preflight \
-        /usr/local/bin/palworld-umu-smoke-test
+        /usr/local/bin/palworld-umu-smoke-test; \
+    python3 -m py_compile /usr/local/bin/palworld-umu-start; \
+    rm -rf /usr/local/bin/__pycache__; \
+    /usr/local/bin/palworld-umu-start --version
 
 USER container
 WORKDIR /home/container

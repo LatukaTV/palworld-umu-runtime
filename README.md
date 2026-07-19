@@ -86,3 +86,19 @@ DISPLAY=:99
 - Xvfb listens only on the local Unix socket; TCP listening is disabled.
 - No Docker, AppArmor, Seccomp, capability, kernel or Root-server changes are required.
 - The Egg launches Xvfb inline in its normal startup field and then replaces the shell with `exec umu-run ...`; no server-side startup script is used.
+
+## Compact runtime launcher – 2026-07-19
+
+The corrected Egg no longer embeds orchestration logic in the panel startup field. The runtime image provides:
+
+```text
+/usr/local/bin/palworld-umu-start
+```
+
+The Egg startup is therefore exactly:
+
+```text
+palworld-umu-start
+```
+
+The image-internal launcher performs parser execution with secret redaction, storage checks, optional prefix reset, UE4SS switching, XDG setup, Xvfb startup, UMU/GE-Proton launch, RCON readiness checks and forwarding of Pelican console commands. No launcher file is written into the server volume, and the Egg release contains no `.sh` file.

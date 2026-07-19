@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+VERSION = "0.2.4"
+HOME = Path("/home/container")
+PALSERVER_EXE = HOME / "Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
+PARSER = HOME / "PalworldServerConfigParser"
+DEFAULT_CONFIG = HOME / "DefaultPalWorldSettings.ini"
+CONFIG_DIR = HOME / "Pal/Saved/Config/WindowsServer"
+CONFIG_FILE = CONFIG_DIR / "PalWorldSettings.ini"
+SAVE_ROOT = HOME / "Pal/Saved"
+SAVE_GAMES = SAVE_ROOT / "SaveGames"
+UMU_PREFIX = HOME / ".umu/prefixes/2394010"
+UMU_BACKUPS = HOME / ".loryvant-backups/umu-prefixes"
+LOG_DIR = HOME / "logs/loryvant-palworld"
+XDG_RUNTIME_DIR = Path("/tmp/loryvant-xdg-runtime")
+DISPLAY = ":99"
+XVFB_SOCKET = Path("/tmp/.X11-unix/X99")
+XVFB_LOCK = Path("/tmp/.X99-lock")
+XVFB_LOG = LOG_DIR / "xvfb.log"
+_SECRET_OUTPUT = re.compile(r"^(.*Password.*(?:value:|with value:)).*$", re.IGNORECASE)
+
+xvfb_process: subprocess.Popen[bytes] | None = None
+server_process: subprocess.Popen[bytes] | None = None
+shutdown_event = threading.Event()
+
+
+def log(message: str) -> None:
+    print(f"[Loryvant] {message}", flush=True)
+
+
+def fail(message: str, code: int) -> None:
+    print(f"[Loryvant] FEHLER: {message}", file=sys.stderr, flush=True)
+    raise SystemExit(code)
+
+
+def truthy(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def require_command(name: str, code: int) -> None:
+    if not shutil.which(name):
+        fail(f"{name} fehlt im Containerimage.", code)
+
+
+def require_file(path: Path, description: str, code: int, executable: bool = False) -> None:
+    ok = path.is_file() and (not executable or os.access(path, os.X_OK))
+    if not ok:
+        fail(f"{description} fehlt: {path}", code)
+
+
+def prepare_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(HOME),
+            "USER": "container",
+            "GAMEID": "2394010",
+            "STORE": "steam",
+            "WINEPREFIX": str(UMU_PREFIX),
+            "PROTONPATH": "/opt/ge-proton-host",
+            "STEAM_COMPAT_INSTALL_PATH": str(HOME),
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH": str(HOME / "steamcmd"),
+            "XDG_DATA_HOME": str(HOME / ".local/share"),
+            "XDG_CACHE_HOME": str(HOME / ".cache"),
+            "XDG_RUNTIME_DIR": str(XDG_RUNTIME_DIR),
+            "DISPLAY": DISPLAY,
+            "XDG_SESSION_TYPE": "x11",
+            "SDL_VIDEODRIVER": "x11",
+            "PROTON_USE_XALIA": "0",
+            "UMU_RUNTIME_UPDATE": "0",
+        }
+    )
+    for key in (
+        "RUNTIMEPATH",
+        "UMU_NO_RUNTIME",
+        "UMU_NO_PROTON",
+        "UMU_CONTAINER_NSENTER",
+        "WAYLAND_DISPLAY",
+    ):
+        env.pop(key, None)
+    if truthy("PROTON_DEBUG_LOG"):
+        env.update(
+            {
+                "PROTON_LOG": "1",
+                "PROTON_LOG_DIR": str(LOG_DIR),
+                "UMU_LOG": "debug",
+            }
+        )
+    else:
+        for key in ("PROTON_LOG", "PROTON_LOG_DIR", "UMU_LOG"):
+            env.pop(key, None)
+    return env
+
+
+def glibc_version() -> str:
+    result = subprocess.run(
+        ["getconf", "GNU_LIBC_VERSION"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    value = result.stdout.strip().split()[-1]
+    numbers = tuple(int(part) for part in re.findall(r"\d+", value)[:2])
+    if numbers < (2, 38):
+        fail(f"glibc {value} ist älter als 2.38.", 59)
+    return value
+
+
+def ensure_directories() -> None:
+    for path in (
+        CONFIG_DIR,
+        SAVE_GAMES,
+        UMU_PREFIX.parent,
+        UMU_BACKUPS,
+        HOME / ".local/share",
+        HOME / ".cache",
+        LOG_DIR,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def run_parser(env: dict[str, str]) -> None:
+    if not CONFIG_FILE.is_file() or CONFIG_FILE.stat().st_size == 0:
+        shutil.copy2(DEFAULT_CONFIG, CONFIG_FILE)
+        log("WindowsServer/PalWorldSettings.ini wurde aus der Vorlage angelegt.")
+
+    result = subprocess.run(
+        [str(PARSER)],
+        cwd=HOME,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    output = result.stdout or ""
+    for raw_line in output.splitlines():
+        match = _SECRET_OUTPUT.match(raw_line)
+        print(f"{match.group(1)} <redacted>" if match else raw_line, flush=True)
+
+    if result.returncode != 0 or "INI file updated successfully." not in output:
+        fail(f"Config-Parser fehlgeschlagen, Exit {result.returncode}.", 40)
+
+
+def verify_writable(path: Path, filename: str, code: int) -> None:
+    probe = path / filename
+    try:
+        probe.touch(exist_ok=False)
+        probe.unlink()
+    except OSError as exc:
+        fail(f"Pfad ist nicht beschreibbar: {path} ({exc})", code)
+
+
+def prepare_storage() -> None:
+    subprocess.run(["chmod", "-R", "u+rwX", str(SAVE_ROOT)], check=True)
+    verify_writable(SAVE_GAMES, ".loryvant-save-write-test", 42)
+
+    if truthy("RESET_UMU_PREFIX") and UMU_PREFIX.is_dir():
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        destination = UMU_BACKUPS / f"2394010-{stamp}"
+        shutil.move(str(UMU_PREFIX), str(destination))
+        log(f"Vorhandener UMU-Prefix wurde gesichert: {destination}")
+
+    UMU_PREFIX.mkdir(parents=True, exist_ok=True)
+    verify_writable(UMU_PREFIX, ".loryvant-umu-write-test", 45)
+
+
+def configure_ue4ss(env: dict[str, str]) -> None:
+    win64 = HOME / "Pal/Binaries/Win64"
+    enabled = win64 / "winmm.dll"
+    disabled = win64 / "winmm.dll.loryvant-disabled"
+
+    if truthy("UE4SS_ENABLED"):
+        if disabled.is_file() and not enabled.is_file():
+            disabled.rename(enabled)
+        if not enabled.is_file():
+            fail("UE4SS ist aktiviert, aber winmm.dll fehlt.", 52)
+        env["WINEDLLOVERRIDES"] = "winmm=n,b"
+        log("UE4SS-WinMM-Loader aktiviert.")
+    else:
+        if enabled.is_file():
+            enabled.rename(disabled)
+        env.pop("WINEDLLOVERRIDES", None)
+        log("UE4SS deaktiviert.")
+
+
+def start_xvfb(env: dict[str, str]) -> subprocess.Popen[bytes]:
+    global xvfb_process
+
+    subprocess.run(
+        ["pkill", "-TERM", "-x", "Xvfb"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    XDG_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    XDG_RUNTIME_DIR.chmod(0o700)
+    for path in (XVFB_LOCK, XVFB_SOCKET):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    log_handle = XVFB_LOG.open("ab", buffering=0)
+    xvfb_process = subprocess.Popen(
+        [
+            "Xvfb",
+            DISPLAY,
+            "-screen",
+            "0",
+            "1024x768x24",
+            "-nolisten",
+            "tcp",
+            "-ac",
+            "-noreset",
+        ],
+        env=env,
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+    )
+    log_handle.close()
+
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if XVFB_SOCKET.is_socket() and xvfb_process.poll() is None:
+            log(f"Headless-X11 bereit: {DISPLAY}")
+            return xvfb_process
+        if xvfb_process.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    try:
+        details = XVFB_LOG.read_text(errors="replace")
+    except OSError:
+        details = ""
+    if details:
+        print(details, file=sys.stderr, flush=True)
+    fail("Headless-X11 konnte nicht gestartet werden.", 60)
+
+
+def control_secret() -> str:
+    key = "ADMIN_" + "PASSWORD"
+    value = os.environ.get(key, "")
+    if not value:
+        fail(f"{key} ist leer.", 61)
+    return value
+
+
+def rcon_command(command: str, timeout_seconds: float) -> subprocess.CompletedProcess[str]:
+    port = os.environ.get("RCON_PORT", "25575")
+    return subprocess.run(
+        [
+            "rcon",
+            "-s",
+            "-a",
+            f"localhost:{port}",
+            "-p",
+            control_secret(),
+            command,
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout_seconds,
+        check=False,
+    )
+
+
+def readiness_worker() -> None:
+    for attempt in range(1, 151):
+        if shutdown_event.wait(2.0):
+            return
+        if server_process is not None and server_process.poll() is not None:
+            return
+        try:
+            result = rcon_command("Info", 3.0)
+        except subprocess.TimeoutExpired:
+            result = None
+
+        if result is not None and result.returncode == 0:
+            log("Palworld ist bereit.")
+            if result.stdout.strip():
+                print(result.stdout.strip(), flush=True)
+            return
+
+        if attempt % 15 == 0:
+            log(f"Palworld-Prozess läuft; RCON noch nicht bereit ({attempt * 2} Sekunden).")
+
+    print(
+        "[Loryvant] FEHLER: RCON wurde innerhalb von 300 Sekunden nicht bereit.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def stdin_worker() -> None:
+    for raw_line in sys.stdin:
+        command = raw_line.strip()
+        if not command:
+            continue
+        try:
+            result = rcon_command(command, 10.0)
+        except subprocess.TimeoutExpired:
+            print(
+                f"[Loryvant] FEHLER: RCON-Zeitüberschreitung für Befehl: {command}",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
+        if result.stdout:
+            print(result.stdout.rstrip(), flush=True)
+        if result.returncode != 0 and result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr, flush=True)
+
+
+def build_server_command() -> list[str]:
+    port = os.environ.get("SERVER_PORT", "8211")
+    command = [
+        "umu-run",
+        str(PALSERVER_EXE),
+        "-publiclobby",
+        "-useperfthreads",
+        "-NoAsyncLoadingThread",
+        "-UseMultithreadForDS",
+        f"-port={port}",
+        f"-publicport={port}",
+        f"-players={os.environ.get('MAX_PLAYERS', '32')}",
+    ]
+    public_ip = os.environ.get("PUBLIC_IP", "").strip()
+    if public_ip:
+        command.append(f"-publicip={public_ip}")
+    command.append("-rcon")
+    return command
+
+
+def forward_signal(signum: int, _frame: object) -> None:
+    shutdown_event.set()
+    process = server_process
+    if process is not None and process.poll() is None:
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            pass
+
+
+def cleanup() -> None:
+    shutdown_event.set()
+    process = xvfb_process
+    if process is not None and process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+    for path in (XVFB_LOCK, XVFB_SOCKET):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def self_test() -> int:
+    env = prepare_environment()
+    for command in ("umu-run", "rcon", "Xvfb", "getconf"):
+        require_command(command, 1)
+    require_file(
+        Path("/opt/ge-proton-host/proton"),
+        "GE-Proton-Hostschicht",
+        1,
+        executable=True,
+    )
+    manifest_path = Path("/opt/ge-proton-host/toolmanifest.vdf")
+    require_file(manifest_path, "GE-Proton-Hostmanifest", 1)
+    if "require_tool_appid" in manifest_path.read_text(errors="replace"):
+        fail("Hostmanifest fordert pressure-vessel an.", 1)
+    version = glibc_version()
+    XDG_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    XDG_RUNTIME_DIR.chmod(0o700)
+    log(
+        f"Launcher-Selbsttest bestanden: v{VERSION}, "
+        f"glibc {version}, DISPLAY {env['DISPLAY']}"
+    )
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+
+    if args.version:
+        print(f"palworld-umu-start {VERSION}")
+        return 0
+    if args.self_test:
+        return self_test()
+
+    env = prepare_environment()
+    for name, code in (
+        ("umu-run", 43),
+        ("rcon", 46),
+        ("Xvfb", 60),
+        ("getconf", 59),
+    ):
+        require_command(name, code)
+
+    require_file(PARSER, "PalworldServerConfigParser", 40, executable=True)
+    require_file(DEFAULT_CONFIG, "DefaultPalWorldSettings.ini", 47)
+    require_file(PALSERVER_EXE, "Palworld-Windowsserver", 48)
+    require_file(
+        Path("/opt/ge-proton-host/proton"),
+        "GE-Proton-Hostschicht",
+        44,
+        executable=True,
+    )
+    manifest_path = Path("/opt/ge-proton-host/toolmanifest.vdf")
+    require_file(manifest_path, "GE-Proton-Hostmanifest", 54)
+    if "require_tool_appid" in manifest_path.read_text(errors="replace"):
+        fail("Hostmanifest fordert pressure-vessel an.", 57)
+    control_secret()
+
+    version = glibc_version()
+    ensure_directories()
+    run_parser(env)
+    prepare_storage()
+    configure_ue4ss(env)
+    start_xvfb(env)
+
+    log(f"Egg v{VERSION}")
+    log("Runtime: UMU 1.4.0 + GE-Proton11-1")
+    log(f"Container: Debian 13, glibc {version}")
+    log("Startmodus: kompakter Runtime-Launcher mit Headless-X11")
+    log(f"Save-Pfad ist beschreibbar: {SAVE_GAMES}")
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, forward_signal)
+
+    global server_process
+    server_process = subprocess.Popen(
+        build_server_command(),
+        env=env,
+        cwd=HOME,
+        start_new_session=True,
+    )
+    threading.Thread(target=readiness_worker, name="readiness", daemon=True).start()
+    threading.Thread(target=stdin_worker, name="stdin-rcon", daemon=True).start()
+    return server_process.wait()
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    finally:
+        cleanup()

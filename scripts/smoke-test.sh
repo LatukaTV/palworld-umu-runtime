@@ -40,6 +40,7 @@ trap 'rc=$?; printf "[runtime-smoke] FEHLER: Zeile %s, Exit %s, Befehl: %s\n" "$
 run_check "Python-Aufruf" python3 --version
 run_check "UMU-CLI-Aufruf" umu-run --version
 run_check "RCON-CLI-Aufruf" rcon --help
+run_check "Launcher-Selbsttest" palworld-umu-start --self-test
 
 step "Headless-X11-Start als Containerbenutzer"
 rm -rf "${XDG_TEST_DIR}" /tmp/.X99-lock /tmp/.X11-unix/X99
@@ -77,4 +78,4 @@ else
     printf '[runtime-smoke] INFO: SteamCMD-Prüfung übersprungen; kein Pelican-Servervolume eingehängt.\n'
 fi
 
-printf '[runtime-smoke] OK: UMU, GE-Proton11-1 und Headless-X11 sind ausführbar.\n'
+printf '[runtime-smoke] OK: Launcher, UMU, GE-Proton11-1 und Headless-X11 sind ausführbar.\n'

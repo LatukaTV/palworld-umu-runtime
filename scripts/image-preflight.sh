@@ -32,11 +32,19 @@ dpkg --compare-versions "${glibc_version}" ge 2.38 || \
     fail "GE-Proton11-1 benötigt im Hostmodus glibc 2.38 oder neuer."
 
 step "Im Image enthaltene Programme"
-for command_name in python3 rcon umu-run bwrap Xvfb; do
+for command_name in python3 rcon umu-run bwrap Xvfb palworld-umu-start; do
     command_path="$(command -v "${command_name}" || true)"
     printf '[image-preflight] %s=%s\n' "${command_name}" "${command_path:-<nicht gefunden>}"
     [[ -n "${command_path}" ]] || fail "${command_name} fehlt."
 done
+
+step "Kompakter Runtime-Launcher"
+[[ -x /usr/local/bin/palworld-umu-start ]] || \
+    fail "/usr/local/bin/palworld-umu-start ist nicht ausführbar."
+launcher_version="$(palworld-umu-start --version)"
+printf '[image-preflight] launcher=%s\n' "${launcher_version}"
+[[ "${launcher_version}" == "palworld-umu-start 0.2.4" ]] || \
+    fail "Unerwartete Launcher-Version: ${launcher_version}"
 
 step "Installierte UMU-Dateien"
 ls -la /opt/umu /usr/local/bin/umu-run
