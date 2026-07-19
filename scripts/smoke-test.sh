@@ -6,9 +6,11 @@ fail() {
     exit 1
 }
 
+SMOKE_PREFIX=/home/container/.loryvant-wine-smoke
+
 cleanup() {
     [[ -z "${XVFB_PID:-}" ]] || kill "${XVFB_PID}" >/dev/null 2>&1 || true
-    rm -rf /tmp/loryvant-wine-smoke /tmp/loryvant-xdg-smoke /tmp/.X98-lock /tmp/.X11-unix/X98
+    rm -rf "${SMOKE_PREFIX}" /tmp/loryvant-xdg-smoke /tmp/.X98-lock /tmp/.X11-unix/X98
 }
 trap cleanup EXIT
 
@@ -27,20 +29,21 @@ for _ in $(seq 1 100); do
 done
 [[ -S /tmp/.X11-unix/X98 ]] || { cat /tmp/loryvant-xvfb-smoke.log >&2 || true; fail "Xvfb-Socket fehlt."; }
 
+rm -rf "${SMOKE_PREFIX}"
 set +e
 timeout 120 env \
     HOME=/home/container \
     USER=container \
     DISPLAY=:98 \
     XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke \
-    WINEPREFIX=/tmp/loryvant-wine-smoke \
+    WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=-all \
     dbus-run-session -- wineboot -u > /tmp/loryvant-wineboot-smoke.log 2>&1
 WINEBOOT_RC=$?
 set -e
 cat /tmp/loryvant-wineboot-smoke.log || true
-[[ -s /tmp/loryvant-wine-smoke/system.reg ]] || fail "Wine64-Prefix wurde nicht initialisiert; Exit ${WINEBOOT_RC}."
+[[ -s "${SMOKE_PREFIX}/system.reg" ]] || fail "Wine64-Prefix wurde nicht initialisiert; Exit ${WINEBOOT_RC}."
 if [[ "${WINEBOOT_RC}" -ne 0 ]]; then
     printf '[runtime-smoke] WARNUNG: wineboot meldete Exit %s; der Prefix wurde vollständig erzeugt.\n' "${WINEBOOT_RC}"
 fi
