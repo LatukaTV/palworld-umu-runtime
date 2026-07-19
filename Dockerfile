@@ -47,6 +47,7 @@ RUN set -eux; \
         jq \
         lib32gcc-s1 \
         lib32stdc++6 \
+        passwd \
         procps \
         python3 \
         tar \
