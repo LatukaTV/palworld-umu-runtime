@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "0.2.13"
+VERSION = "0.2.14"
 EXPECTED_WINE = "wine-11.13"
 CORE = Path("/usr/local/bin/palworld-umu-start-core")
 HOME = Path("/home/container")
@@ -21,6 +21,8 @@ MARKER = SAVE_ROOT / ".loryvant-v0.2.12-backup-tree-reset"
 WINE_PREFIX = HOME / ".wine-palworld-modded"
 WINE_BACKUP_ROOT = HOME / ".loryvant-backups/wine-prefixes"
 WINE_MARKER = WINE_PREFIX / ".loryvant-wine-version"
+WINE_SYSTEM_REG = WINE_PREFIX / "system.reg"
+WINE_KERNEL32 = WINE_PREFIX / "drive_c/windows/system32/kernel32.dll"
 DEDICATED_NAME = re.compile(r"^\s*DedicatedServerName\s*=\s*([^\r\n]+)", re.I | re.M)
 
 
@@ -61,6 +63,14 @@ def unique_backup_path(root, base):
     return candidate
 
 
+def preserve_wine_prefix(reason):
+    WINE_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    target = unique_backup_path(WINE_BACKUP_ROOT, f"wine-prefix-{reason}-{stamp}")
+    shutil.move(str(WINE_PREFIX), str(target))
+    out(f"Vorheriger Wine-Prefix wurde erhalten: {target}")
+
+
 def prepare_wine_runtime():
     actual = wine_version()
     previous = ""
@@ -71,13 +81,15 @@ def prepare_wine_runtime():
     reset_requested = enabled("RESET_WINE_PREFIX")
     if WINE_PREFIX.is_symlink():
         raise SystemExit("[Loryvant] FEHLER: Wine-Prefix darf kein symbolischer Link sein.")
-    if WINE_PREFIX.exists() and (previous != actual or reset_requested):
-        WINE_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        reason = "manual-reset" if reset_requested else f"before-{actual}"
-        target = unique_backup_path(WINE_BACKUP_ROOT, f"wine-prefix-{reason}-{stamp}")
-        shutil.move(str(WINE_PREFIX), str(target))
-        out(f"Vorheriger Wine-Prefix wurde erhalten: {target}")
+    incomplete = WINE_PREFIX.exists() and WINE_SYSTEM_REG.is_file() and not WINE_KERNEL32.is_file()
+    if WINE_PREFIX.exists() and (previous != actual or reset_requested or incomplete):
+        if reset_requested:
+            reason = "manual-reset"
+        elif incomplete:
+            reason = "incomplete"
+        else:
+            reason = f"before-{actual}"
+        preserve_wine_prefix(reason)
     WINE_PREFIX.mkdir(parents=True, exist_ok=True)
     temporary = WINE_MARKER.with_suffix(".tmp")
     temporary.write_text(actual + "\n", encoding="utf-8")
@@ -168,7 +180,7 @@ def self_test():
     if not CORE.is_file() or not os.access(CORE, os.X_OK):
         raise SystemExit("palworld-umu-start-core fehlt oder ist nicht ausführbar")
     actual = wine_version()
-    out(f"Wrapper-Selbsttest bestanden: v{VERSION}, {actual}, Prefix-Migration und Backup-Unterbaum-Reset")
+    out(f"Wrapper-Selbsttest bestanden: v{VERSION}, {actual}, vollständige Prefix-Prüfung und Backup-Unterbaum-Reset")
     return 0
 
 
