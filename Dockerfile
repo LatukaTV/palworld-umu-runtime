@@ -79,7 +79,7 @@ COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
 
 RUN set -eux; \
-    sed -i 's/VERSION = "0.2.10"/VERSION = "0.2.14"/' /usr/local/bin/palworld-umu-start-core; \
+    sed -i 's/VERSION = "0.2.10"/VERSION = "0.2.15"/' /usr/local/bin/palworld-umu-start-core; \
     chmod 0755 \
         /usr/local/bin/pelican-entrypoint \
         /usr/local/bin/palworld-umu-start \
@@ -93,7 +93,7 @@ RUN set -eux; \
         /usr/local/bin/palworld-umu-start \
         /usr/local/bin/palworld-umu-start-core; \
     rm -rf /usr/local/bin/__pycache__; \
-    test "$(/usr/local/bin/palworld-umu-start --version)" = "palworld-umu-start 0.2.14"
+    test "$(/usr/local/bin/palworld-umu-start --version)" = "palworld-umu-start 0.2.15"
 
 USER container
 WORKDIR /home/container
