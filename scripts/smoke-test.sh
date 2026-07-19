@@ -165,7 +165,8 @@ timeout 30 env \
     WINEPREFIX="${SMOKE_PREFIX}" \
     WINEARCH=win64 \
     WINEDEBUG=+loaddll,+module \
-    dbus-run-session -- wine64 cmd.exe /c ver >> /tmp/loryvant-wine-process-smoke.log 2>&1
+    dbus-run-session -- bash -lc 'wine64 cmd.exe /c ver; rc=$?; wineserver -k >/dev/null 2>&1 || true; exit "$rc"' \
+    > /tmp/loryvant-wine-process-smoke.log 2>&1
 WINE_PROCESS_RC=$?
 set -e
 cat /tmp/loryvant-wine-process-smoke.log || true
