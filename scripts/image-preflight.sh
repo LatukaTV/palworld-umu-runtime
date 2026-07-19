@@ -43,7 +43,7 @@ step "Kompakter Runtime-Launcher"
     fail "/usr/local/bin/palworld-umu-start ist nicht ausführbar."
 launcher_version="$(palworld-umu-start --version)"
 printf '[image-preflight] launcher=%s\n' "${launcher_version}"
-[[ "${launcher_version}" == "palworld-umu-start 0.2.4" ]] || \
+[[ "${launcher_version}" == "palworld-umu-start 0.2.5" ]] || \
     fail "Unerwartete Launcher-Version: ${launcher_version}"
 
 step "Installierte UMU-Dateien"
