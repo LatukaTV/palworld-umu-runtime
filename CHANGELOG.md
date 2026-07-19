@@ -106,3 +106,15 @@
 - `Pal/Saved/SaveGames` bleibt unverändert und wird direkt weiterverwendet.
 - Readiness und Panelkonsole bleiben über die lokale REST-API erhalten.
 - Der Container startet `PalServer-Linux-Shipping` direkt und benötigt weder privilegierten Betrieb noch Hostanpassungen.
+
+## 0.1.13 – 2026-07-19
+
+- Einen eigenständigen Windows-Modlaufzeitpfad unter `/home/container/ModdedServer` ergänzt; der bestätigte native v0.2.8-Serverbestand bleibt getrennt erhalten.
+- Debian Wine 10, Xvfb und einen lokalen D-Bus-Sessionbus als unprivilegierte Containerlaufzeit eingebaut.
+- SteamCMD lädt App `2394010` ausdrücklich als Windows-Depot in das isolierte Modserververzeichnis.
+- Die gemeinsamen Save-Daten bleiben unter `/home/container/Pal/Saved`; der Windows-Modserver bindet diesen Pfad über einen geprüften Symlink ein.
+- Die offiziellen Palworld-Modpfade `Mods/Workshop`, `Mods/ManagedMods`, `Mods/NativeMods` sowie PAK- und LogicMods-Ziele vorbereitet.
+- DLL-Loader wie `d3d9.dll`, `winmm.dll`, `version.dll`, `xinput1_3.dll` und `dxgi.dll` werden automatisch erkannt und über Wine als native DLLs priorisiert.
+- Vor SteamCMD-Updates werden vorhandene Workshop-, UE4SS-, DLL- und PAK-Moddateien in rotierenden Archiven gesichert.
+- Die Panelkonsole erhält `mods`, `modcheck`, `modbackup` und `modpaths` für Inventur, Plausibilitätsprüfung, Sicherung und Pfadanzeige.
+- Das Runtime-Image enthält selbst keine PalDefender-, UE4SS- oder sonstigen Fremdmoddateien.
