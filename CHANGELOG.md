@@ -45,3 +45,11 @@
 - Das offizielle UMU-1.4.0-Zipapp-Archiv enthält `/opt/umu/umu-run` im gebauten Image mit Modus `0644` statt ausführbar.
 - Der Docker-Build setzt deshalb nach verifizierter Extraktion ausdrücklich `chmod 0755 /opt/umu/umu-run`.
 - Die Ausführbarkeitsprüfung bleibt direkt danach erhalten, sodass ein erneuter Berechtigungsfehler den Build früh und eindeutig stoppt.
+
+## 0.1.6 – 2026-07-19
+
+- Den Container-Userspace auf Debian 13 `trixie` aktualisiert, ohne Änderungen am Pelican-Node oder am geerbten SteamCMD-Einstieg.
+- Buildprüfung für glibc 2.38 oder neuer ergänzt; damit wird die von GE-Proton11-1 benötigte ABI vor Veröffentlichung geprüft.
+- Eine container-native GE-Proton-Hostschicht unter `/opt/ge-proton-host` eingebaut.
+- Die Hostschicht entfernt ausschließlich `require_tool_appid` aus dem kopierten Manifest und verhindert damit den unter Pelican blockierten pressure-vessel-Aufruf.
+- Der Image-Preflight prüft Debian-Version, glibc-Version, Manifest, Symlinkziel und den unveränderten GE-Proton11-1-Unterbau.
