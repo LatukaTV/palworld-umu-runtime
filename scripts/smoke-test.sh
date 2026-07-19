@@ -37,6 +37,7 @@ def load(name, path):
     loader.exec_module(module)
     return module
 
+
 core = load("launcher_core", "/usr/local/bin/palworld-umu-start-core")
 root = Path(tempfile.mkdtemp(prefix="loryvant-save-smoke-"))
 try:
@@ -93,14 +94,16 @@ try:
     wrapper.WINE_PREFIX = root / ".wine-palworld-modded"
     wrapper.WINE_BACKUP_ROOT = root / ".loryvant-backups/wine-prefixes"
     wrapper.WINE_MARKER = wrapper.WINE_PREFIX / ".loryvant-wine-version"
+    wrapper.WINE_SYSTEM_REG = wrapper.WINE_PREFIX / "system.reg"
+    wrapper.WINE_KERNEL32 = wrapper.WINE_PREFIX / "drive_c/windows/system32/kernel32.dll"
 
     wrapper.WINE_PREFIX.mkdir(parents=True)
-    (wrapper.WINE_PREFIX / "system.reg").write_text("old-prefix")
+    wrapper.WINE_SYSTEM_REG.write_text("old-prefix")
     wrapper.WINE_MARKER.write_text("wine-10.0\n")
     wrapper.prepare_wine_runtime()
     assert wrapper.WINE_MARKER.read_text().strip() == "wine-11.13"
-    assert not (wrapper.WINE_PREFIX / "system.reg").exists()
-    old_prefixes = list(wrapper.WINE_BACKUP_ROOT.glob("wine-prefix-before-wine-11.13-*"))
+    assert not wrapper.WINE_SYSTEM_REG.exists()
+    old_prefixes = list(wrapper.WINE_BACKUP_ROOT.glob("wine-prefix-incomplete-*"))
     assert len(old_prefixes) == 1
     assert (old_prefixes[0] / "system.reg").read_text() == "old-prefix"
 
@@ -118,7 +121,7 @@ try:
     assert len(preserved) == 1
     assert (preserved[0] / "local/old/LocalData.sav").read_bytes() == b"old-local"
     assert (preserved[0] / "world/old/Level.sav").read_bytes() == b"old-world"
-    print("[runtime-smoke] Wine-Prefix-Migration, Save-Migration, Weltzuordnung und Backup-Unterbaum-Reparatur geprüft.")
+    print("[runtime-smoke] Prefix-Recovery, Save-Migration, Weltzuordnung und Backup-Unterbaum-Reparatur geprüft.")
 finally:
     shutil.rmtree(root, ignore_errors=True)
 PY
@@ -151,9 +154,21 @@ set -e
 cat /tmp/loryvant-wineboot-smoke.log || true
 [[ -s "${SMOKE_PREFIX}/system.reg" ]] || \
     fail "Wine64-Prefix wurde nicht initialisiert; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+[[ -s "${SMOKE_PREFIX}/drive_c/windows/system32/kernel32.dll" ]] || \
+    fail "Wine64-Prefix enthält keine kernel32.dll; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+timeout 30 env \
+    HOME=/home/container \
+    USER=container \
+    DISPLAY=:98 \
+    XDG_RUNTIME_DIR=/tmp/loryvant-xdg-smoke \
+    WINEPREFIX="${SMOKE_PREFIX}" \
+    WINEARCH=win64 \
+    WINEDEBUG=-all \
+    dbus-run-session -- wine64 cmd /c exit 0 >> /tmp/loryvant-wineboot-smoke.log 2>&1 || \
+    fail "Wine64-Prefix ist nicht funktional ausführbar."
 if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
-    printf '[runtime-smoke] WARNUNG: Prefix vollständig; wineboot=%s, wineserver=%s.\n' \
+    printf '[runtime-smoke] WARNUNG: Prefix funktional; wineboot=%s, wineserver=%s.\n' \
         "${WINEBOOT_RC}" "${WINESERVER_RC}"
 fi
 
-printf '[runtime-smoke] OK: WineHQ 11.13, Prefix-Migration, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
+printf '[runtime-smoke] OK: WineHQ 11.13, funktionaler Prefix, Prefix-Recovery, Save-Migration, Backup-Unterbaum-Reparatur, D-Bus, Xvfb, Launcher und Entrypoint geprüft.\n'
