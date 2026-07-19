@@ -96,3 +96,13 @@
 - SteamCMD-Updateprüfung in den Runtime-Launcher verlagert.
 - Dauerhafte REST-Abfragen nach der Bereitschaft entfernt; nach dem Fertigmarker entstehen keine automatischen Verwaltungszugriffe mehr.
 - Die gemessene Palworld-Prozessstartzeit wird unmittelbar nach der Bereitschaft ausgegeben.
+
+## 0.1.12 – 2026-07-19
+
+- Den Windows-/Proton-Laufzeitpfad vollständig durch Pocketpairs nativen Linux-Dedicated-Server ersetzt.
+- UMU, GE-Proton, Wine, Xvfb, SteamRT4-SDK und D-Bus-Abhängigkeiten aus dem Runtime-Image entfernt.
+- SteamCMD lädt und aktualisiert App `2394010` ausdrücklich als Linux-Depot.
+- Eine vorhandene `WindowsServer/PalWorldSettings.ini` wird einmalig gesichert und nach `LinuxServer` übernommen.
+- `Pal/Saved/SaveGames` bleibt unverändert und wird direkt weiterverwendet.
+- Readiness und Panelkonsole bleiben über die lokale REST-API erhalten.
+- Der Container startet `PalServer-Linux-Shipping` direkt und benötigt weder privilegierten Betrieb noch Hostanpassungen.
