@@ -111,3 +111,27 @@ modpaths
 ## Safety boundary
 
 Third-party server mods execute inside the Palworld Windows process. A faulty or outdated DLL, UE4SS module or PAK can crash the process or corrupt saves. Install one change at a time, keep the automatic backups enabled and complete a reconnect/save test after each mod update.
+
+## v0.2.10 save-path correction
+
+The v0.2.9 shared-save symlink is historical. v0.2.10 removes that link before SteamCMD runs and uses this real Windows save directory:
+
+```text
+/home/container/ModdedServer/Pal/Saved
+```
+
+The native fallback remains here:
+
+```text
+/home/container/Pal/Saved
+```
+
+On the first v0.2.10 start, the launcher:
+
+1. creates a complete archive under `/home/container/.loryvant-backups/saves`;
+2. copies the native world, player data and configuration into the real Windows save directory;
+3. selects the existing world folder in `WindowsServer/GameUserSettings.ini` through `DedicatedServerName`;
+4. runs the configuration parser from `/home/container/ModdedServer`;
+5. verifies copy and atomic rename operations in the Windows save target.
+
+After migration, both runtimes have separate persistent save trees. Windows mod-server progress stays in `ModdedServer/Pal/Saved`; the confirmed native v0.2.8 fallback remains unchanged until an administrator intentionally copies data between them.
