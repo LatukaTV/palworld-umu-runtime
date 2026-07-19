@@ -50,7 +50,22 @@ jobs:
         run: docker run --rm --entrypoint /usr/local/bin/palworld-umu-image-preflight "${LOCAL_IMAGE}"
 
       - name: Run runtime smoke test
-        run: docker run --rm --entrypoint /usr/local/bin/palworld-umu-smoke-test "${LOCAL_IMAGE}"
+        run: |
+          set +e
+          docker run --rm --entrypoint /usr/local/bin/palworld-umu-smoke-test "${LOCAL_IMAGE}" > /tmp/runtime-smoke.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/runtime-smoke.log
+          exit "${rc}"
+
+      - name: Upload runtime smoke log
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-mod-runtime-smoke-${{ github.sha }}
+          path: /tmp/runtime-smoke.log
+          if-no-files-found: error
+          retention-days: 2
 
       - name: Push the verified local image
         run: |
@@ -76,9 +91,14 @@ jobs:
         run: |
           state=failure
           [ "${JOB_STATUS}" = success ] && state=success
+          description="Windows mod runtime verification ${JOB_STATUS}"
+          if [ -s /tmp/runtime-smoke.log ]; then
+            tail_line="$(tail -n 1 /tmp/runtime-smoke.log | tr -d '\r\n' | tr '"' "'" | cut -c1-120)"
+            [ -z "${tail_line}" ] || description="${tail_line}"
+          fi
           curl --fail --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${GH_TOKEN}" \
             --header "Accept: application/vnd.github+json" \
             "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-            --data "{\"state\":\"${state}\",\"context\":\"palworld-windows-mod-runtime/verified-publish\",\"target_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+            --data "{\"state\":\"${state}\",\"context\":\"palworld-windows-mod-runtime/verified-publish\",\"description\":\"${description}\",\"target_url\":\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
