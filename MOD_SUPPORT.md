@@ -135,3 +135,25 @@ On the first v0.2.10 start, the launcher:
 5. verifies copy and atomic rename operations in the Windows save target.
 
 After migration, both runtimes have separate persistent save trees. Windows mod-server progress stays in `ModdedServer/Pal/Saved`; the confirmed native v0.2.8 fallback remains unchanged until an administrator intentionally copies data between them.
+
+## v0.2.12 generated backup-tree reset
+
+The active world data remains untouched. The generated `backup` subtree is preserved below `/home/container/.loryvant-backups/saves`, then rebuilt with fresh `local` and `world` directories and validated through copy plus atomic rename operations.
+
+## v0.2.13 WineHQ runtime
+
+The Windows mod runtime now uses the official, pinned WineHQ development package `11.13~trixie-1` for amd64 and i386. The image requires `wine-11.13` during preflight.
+
+An existing Wine 10 prefix is preserved before the first v0.2.13 start:
+
+```text
+/home/container/.loryvant-backups/wine-prefixes/wine-prefix-before-wine-11.13-<timestamp>
+```
+
+A fresh prefix is then initialized at:
+
+```text
+/home/container/.wine-palworld-modded
+```
+
+The Wine prefix contains runtime registry and compatibility data only. World saves, configuration, Workshop files and manually installed mods remain in their separate persistent paths.
