@@ -21,6 +21,16 @@ printf '[image-preflight] PATH=%s\n' "${PATH:-<leer>}"
 [[ "$(id -u)" -ne 0 ]] || fail "Der Image-Preflight darf nicht als root laufen."
 [[ "${HOME:-}" == "/home/container" ]] || fail "Unerwartetes HOME: ${HOME:-<leer>}"
 
+step "Debian- und glibc-Basis"
+cat /etc/os-release
+. /etc/os-release
+[[ "${ID}" == "debian" ]] || fail "Das Runtime-Image basiert nicht auf Debian."
+[[ "${VERSION_CODENAME:-}" == "trixie" ]] || fail "Erwartet wurde Debian 13 trixie."
+glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
+printf '[image-preflight] glibc=%s\n' "${glibc_version}"
+dpkg --compare-versions "${glibc_version}" ge 2.38 || \
+    fail "GE-Proton11-1 benötigt im Hostmodus glibc 2.38 oder neuer."
+
 step "Im Image enthaltene Programme"
 for command_name in python3 rcon umu-run bwrap; do
     command_path="$(command -v "${command_name}" || true)"
@@ -46,5 +56,19 @@ grep -Fq 'GE-Proton11-1' /opt/ge-proton/version || \
     fail "Installierte GE-Proton-Version ist nicht GE-Proton11-1."
 grep -Fq 'CURRENT_PREFIX_VERSION="GE-Proton11-1"' /opt/ge-proton/proton || \
     fail "GE-Proton-Prefixversion stimmt nicht."
+
+step "Container-native GE-Proton-Hostschicht"
+[[ "${PROTONPATH:-}" == "/opt/ge-proton-host" ]] || \
+    fail "PROTONPATH verweist nicht auf die geprüfte Hostschicht."
+[[ -x /opt/ge-proton-host/proton ]] || fail "Hostschicht enthält kein ausführbares proton."
+[[ -s /opt/ge-proton-host/toolmanifest.vdf ]] || fail "Hostschicht enthält kein toolmanifest.vdf."
+if grep -q require_tool_appid /opt/ge-proton-host/toolmanifest.vdf; then
+    fail "Hostschicht fordert weiterhin pressure-vessel an."
+fi
+grep -q 'compatmanager_layer_name.*proton' /opt/ge-proton-host/toolmanifest.vdf || \
+    fail "Hostschicht ist kein Proton-Kompatibilitätsmanifest."
+resolved_host_proton="$(readlink -f /opt/ge-proton-host/proton)"
+[[ "${resolved_host_proton}" == "/opt/ge-proton/proton" ]] || \
+    fail "Hostschicht verweist nicht auf das geprüfte GE-Proton."
 
 printf '\n[image-preflight] OK: Statische Image-Prüfungen bestanden.\n'
