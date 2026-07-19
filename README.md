@@ -102,3 +102,19 @@ palworld-umu-start
 ```
 
 The image-internal launcher performs parser execution with secret redaction, storage checks, optional prefix reset, UE4SS switching, XDG setup, Xvfb startup, UMU/GE-Proton launch, RCON readiness checks and forwarding of Pelican console commands. No launcher file is written into the server volume, and the Egg release contains no `.sh` file.
+
+## Palworld v1.0 stability profile – 2026-07-19
+
+The launcher uses this effective Palworld argument profile:
+
+```text
+-publiclobby
+-port=<SERVER_PORT>
+-publicport=<SERVER_PORT>
+-players=<MAX_PLAYERS>
+-publicip=<PUBLIC_IP, when configured>
+-rcon
+-logformat=text
+```
+
+The legacy flags `-useperfthreads`, `-NoAsyncLoadingThread` and `-UseMultithreadForDS` are deliberately absent. After the first successful RCON response, the launcher checks `Info` every 15 seconds. Six consecutive failures within 90 seconds terminate the complete UMU/Proton process group with launcher exit code `70`, allowing Pelican to detect a real crash instead of displaying a non-responsive process as running.
