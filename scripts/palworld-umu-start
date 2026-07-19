@@ -295,17 +295,37 @@ def prepare_wine_prefix(env):
     if (WINE_PREFIX / "system.reg").is_file():
         return
     out("Initialisiere den persistenten Wine64-Prefix.")
-    result = subprocess.run(
-        ["wineboot", "-u"],
-        env=env,
-        cwd=HOME,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=120,
-        check=False,
-    )
-    if result.returncode or not (WINE_PREFIX / "system.reg").is_file():
-        fail(f"Wine-Prefix-Initialisierung fehlgeschlagen, Exit {result.returncode}.", 58)
+    log_path = LOG_DIR / "wineboot.log"
+    with log_path.open("ab", buffering=0) as handle:
+        result = subprocess.run(
+            ["wineboot", "-u"],
+            env=env,
+            cwd=HOME,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+            check=False,
+        )
+        wait_result = subprocess.run(
+            ["wineserver", "-w"],
+            env=env,
+            cwd=HOME,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            timeout=120,
+            check=False,
+        )
+    if not (WINE_PREFIX / "system.reg").is_file():
+        if log_path.is_file():
+            print(log_path.read_text(errors="replace"), file=sys.stderr)
+        fail(
+            f"Wine-Prefix-Initialisierung fehlgeschlagen, wineboot={result.returncode}, wineserver={wait_result.returncode}.",
+            58,
+        )
+    if result.returncode or wait_result.returncode:
+        warn(
+            f"Wine-Prefix wurde erzeugt; wineboot={result.returncode}, wineserver={wait_result.returncode}."
+        )
 
 
 def mod_backup_paths():
@@ -651,7 +671,7 @@ def cleanup():
 
 
 def preflight():
-    for name in ("wine64", "wineboot", "Xvfb", "dbus-run-session", "getconf"):
+    for name in ("wine64", "wineboot", "wineserver", "Xvfb", "dbus-run-session", "getconf"):
         need_command(name, 1)
     validate_profile()
     value = subprocess.run(["getconf", "GNU_LIBC_VERSION"], text=True, capture_output=True, check=True).stdout.strip()
@@ -669,7 +689,7 @@ def main():
         return 0
     if args.self_test:
         return preflight()
-    for name, code in (("wine64", 43), ("wineboot", 58), ("Xvfb", 60), ("dbus-run-session", 57)):
+    for name, code in (("wine64", 43), ("wineboot", 58), ("wineserver", 58), ("Xvfb", 60), ("dbus-run-session", 57)):
         need_command(name, code)
     need_file(PARSER, "PalworldServerConfigParser", 40, True)
     need_file(DEFAULT_INI, "DefaultPalWorldSettings.ini", 47)
