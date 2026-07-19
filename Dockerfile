@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM ghcr.io/parkervcp/steamcmd:debian
+FROM registry.gitlab.steamos.cloud/steamrt/steamrt4/platform:latest
 
 LABEL org.opencontainers.image.title="Palworld UMU Runtime"
-LABEL org.opencontainers.image.description="Pelican SteamCMD runtime with UMU 1.4.0 and GE-Proton11-1 on Debian 13 userspace"
+LABEL org.opencontainers.image.description="Pelican Palworld Windows runtime with UMU 1.4.0, GE-Proton11-1 and Steam Linux Runtime 4"
 LABEL org.opencontainers.image.source="https://github.com/LatukaTV/palworld-umu-runtime"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -24,26 +24,12 @@ ENV PATH=/opt/umu:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
     arch="${TARGETARCH:-amd64}"; \
-    test "${arch}" = "amd64"
-
-# Keep the inherited Pelican SteamCMD entrypoint while moving its userspace to
-# Debian 13. GE-Proton11-1 requires glibc 2.38 or newer in host-runtime mode.
-RUN set -eux; \
-    . /etc/os-release; \
-    test "${ID}" = "debian"; \
-    if [ "${VERSION_CODENAME:-}" != "trixie" ]; then \
-        for source in $(find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \)); do \
-            sed -ri 's/(bookworm|bullseye)/trixie/g' "${source}"; \
-        done; \
-    fi; \
+    test "${arch}" = "amd64"; \
     apt-get update; \
-    apt-get full-upgrade -y; \
     apt-get install -y --no-install-recommends \
-        bubblewrap \
         ca-certificates \
         curl \
         file \
-        fuse-overlayfs \
         jq \
         libzstd1 \
         procps \
@@ -58,12 +44,9 @@ RUN set -eux; \
         zstd; \
     glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"; \
     dpkg --compare-versions "${glibc_version}" ge 2.38; \
-    grep -Eq '^VERSION_CODENAME=trixie$' /etc/os-release; \
+    printf 'steamrt4\n' > /opt/loryvant-steamrt4-base; \
     rm -rf /var/lib/apt/lists/*
 
-# Install the architecture-independent UMU zipapp and verify the exact
-# upstream release digest before extraction. The upstream tar currently stores
-# umu-run without executable bits, so the runtime image must set them explicitly.
 RUN set -eux; \
     curl --fail --location --retry 5 --retry-delay 2 \
         "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar" \
@@ -75,9 +58,6 @@ RUN set -eux; \
     ln -s /opt/umu/umu-run /usr/local/bin/umu-run; \
     rm /tmp/umu-launcher.tar
 
-# Install the official GE-Proton release. The release-provided SHA-512 file
-# is downloaded from the same immutable GitHub release tag and must verify
-# successfully before extraction.
 RUN set -eux; \
     mkdir -p /tmp/ge-proton /opt/ge-proton; \
     cd /tmp/ge-proton; \
@@ -94,46 +74,30 @@ RUN set -eux; \
     grep -Fq 'CURRENT_PREFIX_VERSION="GE-Proton11-1"' /opt/ge-proton/proton; \
     rm -rf /tmp/ge-proton
 
-# UMU normally follows GE-Proton's require_tool_appid into pressure-vessel.
-# Pelican's default Seccomp and AppArmor policies block that nested sandbox.
-# The host manifest keeps GE-Proton intact but removes only that runtime edge.
 RUN set -eux; \
     mkdir -p /opt/ge-proton-host; \
     find /opt/ge-proton -mindepth 1 -maxdepth 1 ! -name toolmanifest.vdf \
         -exec ln -s '{}' /opt/ge-proton-host/ ';'; \
-    awk '!/require_tool_appid/' \
-        /opt/ge-proton/toolmanifest.vdf \
-        > /opt/ge-proton-host/toolmanifest.vdf; \
+    awk '!/require_tool_appid/' /opt/ge-proton/toolmanifest.vdf > /opt/ge-proton-host/toolmanifest.vdf; \
     test -x /opt/ge-proton-host/proton; \
     test -s /opt/ge-proton-host/toolmanifest.vdf; \
-    ! grep -q require_tool_appid /opt/ge-proton-host/toolmanifest.vdf; \
-    grep -q 'compatmanager_layer_name.*proton' /opt/ge-proton-host/toolmanifest.vdf
+    ! grep -q require_tool_appid /opt/ge-proton-host/toolmanifest.vdf
 
 RUN set -eux; \
-    mkdir -p \
-        /home/container/.cache \
-        /home/container/.local/share \
-        /home/container/.umu/prefixes; \
-    chown -R container:container \
-        /home/container/.cache \
-        /home/container/.local \
-        /home/container/.umu
+    if ! id container >/dev/null 2>&1; then useradd --create-home --home-dir /home/container --shell /bin/bash container; fi; \
+    mkdir -p /home/container/.cache /home/container/.local/share /home/container/.umu/prefixes; \
+    chown -R container:container /home/container
 
+COPY scripts/pelican-entrypoint /usr/local/bin/pelican-entrypoint
 COPY scripts/palworld-umu-start /usr/local/bin/palworld-umu-start
 COPY scripts/image-preflight.sh /usr/local/bin/palworld-umu-image-preflight
 COPY scripts/smoke-test.sh /usr/local/bin/palworld-umu-smoke-test
 RUN set -eux; \
-    chmod 0755 \
-        /usr/local/bin/palworld-umu-start \
-        /usr/local/bin/palworld-umu-image-preflight \
-        /usr/local/bin/palworld-umu-smoke-test; \
-    python3 -m py_compile /usr/local/bin/palworld-umu-start; \
+    chmod 0755 /usr/local/bin/pelican-entrypoint /usr/local/bin/palworld-umu-start /usr/local/bin/palworld-umu-image-preflight /usr/local/bin/palworld-umu-smoke-test; \
+    python3 -m py_compile /usr/local/bin/pelican-entrypoint /usr/local/bin/palworld-umu-start; \
     rm -rf /usr/local/bin/__pycache__; \
     /usr/local/bin/palworld-umu-start --version
 
 USER container
 WORKDIR /home/container
-
-# Validation runs against the completed candidate container in GitHub Actions.
-# Keeping it outside Docker build layers preserves the complete failing output
-# and prevents an opaque BuildKit "RUN ... exit code 1" annotation.
+ENTRYPOINT ["/usr/local/bin/pelican-entrypoint"]
