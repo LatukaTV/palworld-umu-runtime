@@ -41,7 +41,8 @@ step "Launcher"
 palworld-umu-start --self-test
 /usr/local/bin/palworld-umu-start-core --self-test
 grep -Fq 'EXPECTED_WINE = "wine-11.13"' /usr/local/bin/palworld-umu-start || fail "Wine-Version-Pinning fehlt."
-grep -Fq 'wine-prefix-before-' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Migration fehlt."
+grep -Fq 'reason = "manual-reset" if reset_requested else f"before-{actual}"' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Migrationsgrund fehlt."
+grep -Fq 'f"wine-prefix-{reason}-{stamp}"' /usr/local/bin/palworld-umu-start || fail "Wine-Prefix-Sicherungspfad fehlt."
 grep -Fq 'SAVE_ROOT = SERVER_ROOT / "Pal/Saved"' /usr/local/bin/palworld-umu-start-core || fail "Eigenständiger Windows-Save-Pfad fehlt."
 grep -Fq 'prepare_independent_saved()' /usr/local/bin/palworld-umu-start-core || fail "Save-Migration fehlt."
 grep -Fq 'Aktive Welt für WindowsServer' /usr/local/bin/palworld-umu-start-core || fail "DedicatedServerName-Zuordnung fehlt."
