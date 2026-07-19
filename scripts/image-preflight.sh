@@ -30,8 +30,9 @@ for command_name in python3 wine64 wineboot wineserver Xvfb dbus-run-session pal
     command -v "${command_name}" >/dev/null || fail "${command_name} fehlt."
 done
 [[ -x /usr/local/bin/palworld-umu-start-core ]] || fail "palworld-umu-start-core fehlt."
+[[ -x /opt/wine-devel/lib/wine/x86_64-unix/wine ]] || fail "WineHQ-64-Bit-Loader fehlt."
 [[ "$(wine64 --version)" == "wine-11.13" ]] || fail "WineHQ 11.13 fehlt."
-[[ "$(readlink -f /usr/local/bin/wine64)" == "/opt/wine-devel/bin/wine" ]] || fail "wine64 zeigt auf eine unerwartete Laufzeit."
+[[ "$(readlink -f /usr/local/bin/wine64)" == "/opt/wine-devel/lib/wine/x86_64-unix/wine" ]] || fail "wine64 zeigt auf eine unerwartete Laufzeit."
 [[ "$(readlink -f /usr/local/bin/wineserver)" == "/opt/wine-devel/bin/wineserver" ]] || fail "wineserver zeigt auf eine unerwartete Laufzeit."
 [[ -x /usr/local/lib/loryvant/wineboot-real ]] || fail "WineHQ-wineboot fehlt."
 [[ -s /etc/machine-id ]] || fail "/etc/machine-id fehlt."
@@ -59,4 +60,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, expliziter Wine64-Prefix-Test, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, nativer Wine64-Prefix-Test, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
