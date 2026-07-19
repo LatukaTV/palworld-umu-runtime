@@ -3,10 +3,22 @@ set +e
 /usr/local/lib/loryvant/wineboot-real "$@"
 rc=$?
 prefix="${WINEPREFIX:-${HOME:-/home/container}/.wine}"
-if [[ -s "${prefix}/system.reg" ]]; then
+system_reg="${prefix}/system.reg"
+kernel32="${prefix}/drive_c/windows/system32/kernel32.dll"
+
+if [[ -s "${system_reg}" && -s "${kernel32}" ]]; then
     if [[ "${rc}" -ne 0 ]]; then
         printf '[Loryvant] WARNUNG: wineboot meldete Exit %s; der Prefix wurde vollständig erzeugt.\n' "${rc}" >&2
     fi
     exit 0
+fi
+
+if [[ -s "${system_reg}" && ! -s "${kernel32}" ]]; then
+    printf '[Loryvant] FEHLER: Wine-Prefix ist unvollständig; kernel32.dll fehlt.\n' >&2
+    rm -f "${system_reg}"
+fi
+
+if [[ "${rc}" -eq 0 ]]; then
+    exit 58
 fi
 exit "${rc}"
