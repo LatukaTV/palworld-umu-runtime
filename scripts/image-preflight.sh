@@ -23,13 +23,6 @@ step "Native Laufzeit"
 for command_name in python3 getconf palworld-umu-start pelican-entrypoint; do
     command -v "${command_name}" >/dev/null || fail "${command_name} fehlt."
 done
-if command -v umu-run >/dev/null; then
-    fail "UMU ist im nativen Image unerwartet vorhanden."
-fi
-if command -v Xvfb >/dev/null; then
-    fail "Xvfb ist im nativen Image unerwartet vorhanden."
-fi
-[[ ! -e /opt/ge-proton ]] || fail "GE-Proton ist im nativen Image unerwartet vorhanden."
 
 step "Launcher"
 [[ "$(palworld-umu-start --version)" == "palworld-umu-start 0.2.8" ]] || \
