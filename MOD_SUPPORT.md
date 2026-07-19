@@ -2,7 +2,7 @@
 
 ## Scope
 
-The v0.2.9 runtime provides a generic Windows dedicated-server environment for Palworld server mods. It does not download, bundle or enable PalDefender, UE4SS or any other third-party mod.
+The v0.2.9 runtime provides a generic Windows dedicated-server environment for Palworld server mods. It downloads, bundles and enables zero third-party mods. PalDefender, UE4SS and every other mod remain user-managed files.
 
 The confirmed native Linux v0.2.8 runtime remains available through its immutable image tag and release ZIP. The modded Windows server is installed separately below `/home/container/ModdedServer`.
 
@@ -31,21 +31,25 @@ Place each server-compatible mod below:
 /home/container/Mods/Workshop/<folder>/Info.json
 ```
 
-After the first Windows-server start, configure:
+The launcher creates this initial configuration automatically:
 
 ```text
 /home/container/Mods/PalModSettings.ini
 ```
 
-Example:
-
 ```ini
 [PalModSettings]
 bGlobalEnableMod=true
+WorkshopRootDir=Z:\home\container\Mods\Workshop
+```
+
+Add one line for every enabled package, using the `PackageName` value from `Info.json`:
+
+```ini
 ActiveModList=PackageNameFromInfoJson
 ```
 
-The Palworld server deploys enabled packages on restart according to their `Info.json` install rules.
+The launcher also passes the same Workshop root through Palworld's supported `-workshopdir` option. Palworld deploys enabled packages on restart according to their `Info.json` install rules.
 
 ## Manual DLL loaders
 
