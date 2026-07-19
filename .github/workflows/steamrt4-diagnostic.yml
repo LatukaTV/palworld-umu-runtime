@@ -12,13 +12,13 @@ jobs:
   diagnose:
     runs-on: ubuntu-24.04
     steps:
-      - name: Pull SteamRT4 SDK
-        run: docker pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest
-      - name: Inspect SteamRT4 SDK
+      - uses: actions/checkout@v6
+      - name: Pull and inspect SteamRT4 SDK
         run: |
+          docker pull registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest >/dev/null
           docker image inspect registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest --format 'ARCH={{.Architecture}} USER={{.Config.User}} ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}}'
           docker run --rm --entrypoint /bin/bash registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest -lc '
-            set -eux
+            set -eu
             uname -m
             id
             cat /etc/os-release
@@ -28,6 +28,18 @@ jobs:
             getconf GNU_LIBC_VERSION
             command -v useradd || true
           '
+      - name: Build with concise failure output
+        run: |
+          set +e
+          docker build --progress=plain --tag palworld-umu-runtime:diagnostic . >/tmp/build.log 2>&1
+          rc=$?
+          set -e
+          if [ "${rc}" -ne 0 ]; then
+            echo '=== LETZTE 160 BUILDZEILEN ==='
+            tail -n 160 /tmp/build.log
+            exit "${rc}"
+          fi
+          tail -n 40 /tmp/build.log
       - name: Publish diagnostic status
         if: always()
         env:
