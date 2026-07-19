@@ -32,7 +32,7 @@ dpkg --compare-versions "${glibc_version}" ge 2.38 || \
     fail "GE-Proton11-1 benötigt im Hostmodus glibc 2.38 oder neuer."
 
 step "Im Image enthaltene Programme"
-for command_name in python3 rcon umu-run bwrap; do
+for command_name in python3 rcon umu-run bwrap Xvfb; do
     command_path="$(command -v "${command_name}" || true)"
     printf '[image-preflight] %s=%s\n' "${command_name}" "${command_path:-<nicht gefunden>}"
     [[ -n "${command_path}" ]] || fail "${command_name} fehlt."
@@ -70,5 +70,11 @@ grep -q 'compatmanager_layer_name.*proton' /opt/ge-proton-host/toolmanifest.vdf 
 resolved_host_proton="$(readlink -f /opt/ge-proton-host/proton)"
 [[ "${resolved_host_proton}" == "/opt/ge-proton/proton" ]] || \
     fail "Hostschicht verweist nicht auf das geprüfte GE-Proton."
+
+step "Headless-X11-Komponente"
+Xvfb -help >/tmp/loryvant-xvfb-help.txt 2>&1 || true
+grep -q -- '-screen' /tmp/loryvant-xvfb-help.txt || \
+    fail "Xvfb unterstützt die benötigte Bildschirmoption nicht."
+rm -f /tmp/loryvant-xvfb-help.txt
 
 printf '\n[image-preflight] OK: Statische Image-Prüfungen bestanden.\n'
