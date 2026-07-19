@@ -18,6 +18,12 @@ printf '[image-preflight] uname=%s uid=%s gid=%s user=%s HOME=%s\n' \
 [[ "$(uname -m)" == "x86_64" ]] || fail "Nur linux/amd64 wird unterstützt."
 [[ "$(id -u)" -ne 0 ]] || fail "Preflight läuft als root."
 [[ "${HOME:-}" == "/home/container" ]] || fail "Unerwartetes HOME."
+. /etc/os-release
+[[ "${VERSION_CODENAME}" == "trixie" ]] || fail "Debian-13/Trixie-Userspace fehlt."
+[[ "$(getconf GNU_LIBC_VERSION)" == "glibc 2.41" ]] || fail "Unerwartete glibc-Version."
+getent passwd container >/dev/null || fail "Container-Benutzer fehlt."
+[[ -e /usr/lib32/libstdc++.so.6 ]] || fail "SteamCMD libstdc++ 32-Bit fehlt."
+[[ -e /usr/lib32/libgcc_s.so.1 ]] || fail "SteamCMD libgcc 32-Bit fehlt."
 
 step "Wine-Modlaufzeit"
 for command_name in python3 wine64 wineboot wineserver Xvfb dbus-run-session palworld-umu-start pelican-entrypoint; do
@@ -48,4 +54,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: WineHQ 11.13, Prefix-Migration, Xvfb, D-Bus, Backup-Unterbaum-Reparatur, isolierter Save-Pfad, Launcher und Pelican-Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Debian 13, glibc 2.41, SteamCMD-32-Bit-Laufzeit, WineHQ 11.13, Prefix-Migration, Xvfb, D-Bus, Backup-Unterbaum-Reparatur, isolierter Save-Pfad, Launcher und Pelican-Entrypoint geprüft.\n'
