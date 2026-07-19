@@ -12,6 +12,12 @@ prefix_complete() {
     [[ -s "${system_reg}" && -s "${kernel64}" && -s "${kernel32}" && -s "${cmd64}" && -s "${cmd32}" ]]
 }
 
+report_missing() {
+    for path in "${system_reg}" "${kernel64}" "${kernel32}" "${cmd64}" "${cmd32}"; do
+        [[ -s "${path}" ]] || printf '[Loryvant] FEHLT: %s\n' "${path}" >&2
+    done
+}
+
 stop_wine() {
     env WINEPREFIX="${prefix}" wineserver -k >/dev/null 2>&1 || true
     for _ in $(seq 1 100); do
@@ -29,11 +35,9 @@ stop_wine() {
 /usr/local/lib/loryvant/wineboot-real "$@" &
 boot_pid=$!
 boot_rc=0
-complete=0
 
 for _ in $(seq 1 1200); do
     if prefix_complete; then
-        complete=1
         sleep 2
         stop_wine
         break
@@ -58,6 +62,7 @@ if prefix_complete; then
     exit 0
 fi
 
+report_missing
 if [[ -s "${system_reg}" ]]; then
     printf '[Loryvant] FEHLER: Wine-Prefix ist unvollständig; 64-Bit- oder WoW64-Laufzeitdateien fehlen.\n' >&2
     rm -f "${system_reg}"
