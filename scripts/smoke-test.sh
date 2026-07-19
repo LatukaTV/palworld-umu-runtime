@@ -9,6 +9,8 @@ fail() {
 SMOKE_PREFIX=/home/container/.loryvant-wine-smoke
 
 cleanup() {
+    env WINEPREFIX="${SMOKE_PREFIX}" wineserver -k >/dev/null 2>&1 || true
+    sleep .2
     [[ -z "${XVFB_PID:-}" ]] || kill "${XVFB_PID}" >/dev/null 2>&1 || true
     rm -rf "${SMOKE_PREFIX}" /tmp/loryvant-xdg-smoke /tmp/.X98-lock /tmp/.X11-unix/X98
 }
@@ -41,11 +43,15 @@ timeout 120 env \
     WINEDEBUG=-all \
     dbus-run-session -- wineboot -u > /tmp/loryvant-wineboot-smoke.log 2>&1
 WINEBOOT_RC=$?
+timeout 120 env WINEPREFIX="${SMOKE_PREFIX}" wineserver -w >> /tmp/loryvant-wineboot-smoke.log 2>&1
+WINESERVER_RC=$?
 set -e
 cat /tmp/loryvant-wineboot-smoke.log || true
-[[ -s "${SMOKE_PREFIX}/system.reg" ]] || fail "Wine64-Prefix wurde nicht initialisiert; Exit ${WINEBOOT_RC}."
-if [[ "${WINEBOOT_RC}" -ne 0 ]]; then
-    printf '[runtime-smoke] WARNUNG: wineboot meldete Exit %s; der Prefix wurde vollständig erzeugt.\n' "${WINEBOOT_RC}"
+[[ -s "${SMOKE_PREFIX}/system.reg" ]] || \
+    fail "Wine64-Prefix wurde nicht initialisiert; wineboot=${WINEBOOT_RC}, wineserver=${WINESERVER_RC}."
+if [[ "${WINEBOOT_RC}" -ne 0 || "${WINESERVER_RC}" -ne 0 ]]; then
+    printf '[runtime-smoke] WARNUNG: Prefix vollständig; wineboot=%s, wineserver=%s.\n' \
+        "${WINEBOOT_RC}" "${WINESERVER_RC}"
 fi
 
 printf '[runtime-smoke] OK: Wine64-Prefix, D-Bus, Xvfb, Launcher und Entrypoint sind ausführbar.\n'
