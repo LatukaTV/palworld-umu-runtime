@@ -4,11 +4,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
 
-VERSION = "0.2.12"
+VERSION = "0.2.13"
+EXPECTED_WINE = "wine-11.13"
 CORE = Path("/usr/local/bin/palworld-umu-start-core")
 HOME = Path("/home/container")
 SAVE_ROOT = HOME / "ModdedServer/Pal/Saved"
@@ -16,6 +18,9 @@ SAVE_GAMES = SAVE_ROOT / "SaveGames/0"
 GAME_USER_SETTINGS = SAVE_ROOT / "Config/WindowsServer/GameUserSettings.ini"
 BACKUP_ROOT = HOME / ".loryvant-backups/saves"
 MARKER = SAVE_ROOT / ".loryvant-v0.2.12-backup-tree-reset"
+WINE_PREFIX = HOME / ".wine-palworld-modded"
+WINE_BACKUP_ROOT = HOME / ".loryvant-backups/wine-prefixes"
+WINE_MARKER = WINE_PREFIX / ".loryvant-wine-version"
 DEDICATED_NAME = re.compile(r"^\s*DedicatedServerName\s*=\s*([^\r\n]+)", re.I | re.M)
 
 
@@ -25,6 +30,60 @@ def out(message):
 
 def warn(message):
     print(f"[Loryvant] WARNUNG: {message}", file=sys.stderr, flush=True)
+
+
+def enabled(name, default="0"):
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def wine_version():
+    result = subprocess.run(
+        ["wine64", "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    value = (result.stdout or "").strip()
+    if result.returncode or value != EXPECTED_WINE:
+        raise SystemExit(
+            f"[Loryvant] FEHLER: Wine-Laufzeit stimmt nicht: erwartet {EXPECTED_WINE}, erhalten {value or '<leer>'}."
+        )
+    return value
+
+
+def unique_backup_path(root, base):
+    candidate = root / base
+    counter = 1
+    while candidate.exists() or candidate.is_symlink():
+        candidate = root / f"{base}-{counter}"
+        counter += 1
+    return candidate
+
+
+def prepare_wine_runtime():
+    actual = wine_version()
+    previous = ""
+    try:
+        previous = WINE_MARKER.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    reset_requested = enabled("RESET_WINE_PREFIX")
+    if WINE_PREFIX.is_symlink():
+        raise SystemExit("[Loryvant] FEHLER: Wine-Prefix darf kein symbolischer Link sein.")
+    if WINE_PREFIX.exists() and (previous != actual or reset_requested):
+        WINE_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        reason = "manual-reset" if reset_requested else f"before-{actual}"
+        target = unique_backup_path(WINE_BACKUP_ROOT, f"wine-prefix-{reason}-{stamp}")
+        shutil.move(str(WINE_PREFIX), str(target))
+        out(f"Vorheriger Wine-Prefix wurde erhalten: {target}")
+    WINE_PREFIX.mkdir(parents=True, exist_ok=True)
+    temporary = WINE_MARKER.with_suffix(".tmp")
+    temporary.write_text(actual + "\n", encoding="utf-8")
+    os.replace(temporary, WINE_MARKER)
+    os.environ["RESET_WINE_PREFIX"] = "0"
+    out(f"Wine-Laufzeit bereit: {actual}")
 
 
 def read_world_name():
@@ -70,7 +129,7 @@ def validate_backup_tree(path):
 
 
 def reset_backup_tree():
-    if MARKER.is_file() and os.environ.get("RESET_WORLD_BACKUP_TREE", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+    if MARKER.is_file() and not enabled("RESET_WORLD_BACKUP_TREE"):
         out("Windows-Backup-Unterbaum wurde für v0.2.12 bereits bereinigt.")
         return
     world_name = read_world_name()
@@ -83,20 +142,20 @@ def reset_backup_tree():
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     preserved = ""
     if backup_tree.exists() or backup_tree.is_symlink():
-        target = BACKUP_ROOT / f"generated-backup-tree-{world_name}-{stamp}"
-        if target.exists():
-            shutil.rmtree(target, ignore_errors=True)
+        target = unique_backup_path(BACKUP_ROOT, f"generated-backup-tree-{world_name}-{stamp}")
         shutil.move(str(backup_tree), str(target))
         preserved = str(target)
         out(f"Alter generierter Backup-Unterbaum wurde erhalten: {target}")
+    backup_tree.mkdir(parents=True, exist_ok=True)
+    (backup_tree / "local").mkdir(parents=True, exist_ok=True)
+    (backup_tree / "world").mkdir(parents=True, exist_ok=True)
     for path in (backup_tree, backup_tree / "local", backup_tree / "world"):
-        path.mkdir(parents=True, exist_ok=True)
         path.chmod(0o755)
     validate_backup_tree(backup_tree)
     MARKER.parent.mkdir(parents=True, exist_ok=True)
     temporary = MARKER.with_suffix(".tmp")
     temporary.write_text(json.dumps({
-        "version": VERSION,
+        "version": "0.2.12",
         "world": world_name,
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "preserved": preserved,
@@ -108,7 +167,8 @@ def reset_backup_tree():
 def self_test():
     if not CORE.is_file() or not os.access(CORE, os.X_OK):
         raise SystemExit("palworld-umu-start-core fehlt oder ist nicht ausführbar")
-    out(f"Wrapper-Selbsttest bestanden: v{VERSION}, datenhaltender Backup-Unterbaum-Reset")
+    actual = wine_version()
+    out(f"Wrapper-Selbsttest bestanden: v{VERSION}, {actual}, Prefix-Migration und Backup-Unterbaum-Reset")
     return 0
 
 
@@ -122,6 +182,7 @@ def main():
         return 0
     if args.self_test:
         return self_test()
+    prepare_wine_runtime()
     reset_backup_tree()
     os.execv(str(CORE), [str(CORE), *rest])
 
