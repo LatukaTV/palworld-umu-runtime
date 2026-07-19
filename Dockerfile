@@ -53,6 +53,7 @@ RUN set -eux; \
         python3-xlib \
         python3-xxhash \
         tar \
+        xvfb \
         xz-utils \
         zstd; \
     glibc_version="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"; \
