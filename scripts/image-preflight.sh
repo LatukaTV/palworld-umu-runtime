@@ -32,7 +32,7 @@ dpkg --compare-versions "${glibc_version}" ge 2.38 || \
     fail "GE-Proton11-1 benötigt im Hostmodus glibc 2.38 oder neuer."
 
 step "Im Image enthaltene Programme"
-for command_name in python3 rcon umu-run bwrap Xvfb palworld-umu-start; do
+for command_name in python3 umu-run bwrap Xvfb palworld-umu-start; do
     command_path="$(command -v "${command_name}" || true)"
     printf '[image-preflight] %s=%s\n' "${command_name}" "${command_path:-<nicht gefunden>}"
     [[ -n "${command_path}" ]] || fail "${command_name} fehlt."
@@ -43,8 +43,15 @@ step "Kompakter Runtime-Launcher"
     fail "/usr/local/bin/palworld-umu-start ist nicht ausführbar."
 launcher_version="$(palworld-umu-start --version)"
 printf '[image-preflight] launcher=%s\n' "${launcher_version}"
-[[ "${launcher_version}" == "palworld-umu-start 0.2.5" ]] || \
+[[ "${launcher_version}" == "palworld-umu-start 0.2.6" ]] || \
     fail "Unerwartete Launcher-Version: ${launcher_version}"
+grep -Eq '"REST_API_ENABLED"[[:space:]]*:[[:space:]]*"True"' /usr/local/bin/palworld-umu-start || \
+    fail "Launcher aktiviert die lokale REST-API nicht."
+grep -Eq '"RCON_ENABLE"[[:space:]]*:[[:space:]]*"False"' /usr/local/bin/palworld-umu-start || \
+    fail "Launcher deaktiviert den RCON-Dienst nicht."
+if grep -Eq 'rcon_command|RCON-Healthcheck|command\.append\("-rcon"\)' /usr/local/bin/palworld-umu-start; then
+    fail "Launcher enthält weiterhin einen aktiven RCON-Pfad."
+fi
 
 step "Installierte UMU-Dateien"
 ls -la /opt/umu /usr/local/bin/umu-run
