@@ -53,3 +53,11 @@
 - Eine container-native GE-Proton-Hostschicht unter `/opt/ge-proton-host` eingebaut.
 - Die Hostschicht entfernt ausschließlich `require_tool_appid` aus dem kopierten Manifest und verhindert damit den unter Pelican blockierten pressure-vessel-Aufruf.
 - Der Image-Preflight prüft Debian-Version, glibc-Version, Manifest, Symlinkziel und den unveränderten GE-Proton11-1-Unterbau.
+
+## 0.1.7 – 2026-07-19
+
+- Stillstand nach `fsync: up and running` und zwei Meldungen zu fehlendem `XDG_RUNTIME_DIR` aus dem ersten realen Palworld-Windowsserver-Start ausgewertet.
+- Xvfb als containerinternes, headless X11-Backend ergänzt; dafür ist keine Änderung am Pelican-Node oder Root-Server erforderlich.
+- Image-Preflight verlangt jetzt das Programm `Xvfb`.
+- Runtime-Smoke-Test startet Xvfb als unprivilegierter `container`-Benutzer, legt ein XDG-Laufzeitverzeichnis mit Modus `0700` an und prüft den erzeugten X11-Socket.
+- Der Egg-Startup setzt weiterhin direkt `exec umu-run`; Xvfb wird ausschließlich als Hintergrundprozess im normalen Startup-Feld gestartet.
