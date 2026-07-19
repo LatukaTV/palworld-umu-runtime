@@ -89,8 +89,8 @@ def reset_backup_tree():
         shutil.move(str(backup_tree), str(target))
         preserved = str(target)
         out(f"Alter generierter Backup-Unterbaum wurde erhalten: {target}")
-    backup_tree.mkdir(parents=True, exist_ok=True)
     for path in (backup_tree, backup_tree / "local", backup_tree / "world"):
+        path.mkdir(parents=True, exist_ok=True)
         path.chmod(0o755)
     validate_backup_tree(backup_tree)
     MARKER.parent.mkdir(parents=True, exist_ok=True)
