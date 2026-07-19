@@ -15,7 +15,7 @@ ARG UMU_SHA256="138ce4b8843608a257d4bee88191ca78a989778bcefd8abb3c1d1aaac3ac6fb8
 ARG GE_PROTON_VERSION="GE-Proton11-1"
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PROTONPATH=/opt/ge-proton
+ENV PROTONPATH=/opt/ge-proton-host
 ENV XDG_DATA_HOME=/home/container/.local/share
 ENV XDG_CACHE_HOME=/home/container/.cache
 ENV HOME=/home/container
@@ -92,6 +92,21 @@ RUN set -eux; \
     test -x /opt/ge-proton/proton; \
     grep -Fq 'CURRENT_PREFIX_VERSION="GE-Proton11-1"' /opt/ge-proton/proton; \
     rm -rf /tmp/ge-proton
+
+# UMU normally follows GE-Proton's require_tool_appid into pressure-vessel.
+# Pelican's default Seccomp and AppArmor policies block that nested sandbox.
+# The host manifest keeps GE-Proton intact but removes only that runtime edge.
+RUN set -eux; \
+    mkdir -p /opt/ge-proton-host; \
+    find /opt/ge-proton -mindepth 1 -maxdepth 1 ! -name toolmanifest.vdf \
+        -exec ln -s '{}' /opt/ge-proton-host/ ';'; \
+    awk '!/require_tool_appid/' \
+        /opt/ge-proton/toolmanifest.vdf \
+        > /opt/ge-proton-host/toolmanifest.vdf; \
+    test -x /opt/ge-proton-host/proton; \
+    test -s /opt/ge-proton-host/toolmanifest.vdf; \
+    ! grep -q require_tool_appid /opt/ge-proton-host/toolmanifest.vdf; \
+    grep -q 'compatmanager_layer_name.*proton' /opt/ge-proton-host/toolmanifest.vdf
 
 RUN set -eux; \
     mkdir -p \
