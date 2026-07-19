@@ -137,3 +137,12 @@
 - Der aktive Weltstand, `Level.sav`, `LevelMeta.sav`, `Players` und die übrigen produktiven Save-Dateien bleiben unverändert.
 - Ein versionsgebundener Marker verhindert wiederholte Bereinigungen; `RESET_WORLD_BACKUP_TREE=1` erlaubt einen ausdrücklich angeforderten erneuten Lauf.
 - Image-Preflight und Runtime-Smoke-Test prüfen Wrapper, Kernlauncher, Save-Migration und die datenhaltende Backup-Unterbaum-Reparatur getrennt.
+
+## 0.1.16 – 2026-07-19
+
+- Debian Wine 10 durch das offizielle WineHQ-Entwicklungspaket `11.13~trixie-1` für amd64 und i386 ersetzt.
+- Den WineHQ-Paketschlüssel anhand der Repository-Schlüssel-ID geprüft und die Paketversion im Docker-Build fest angeheftet.
+- `wine64`, `wineboot` und `wineserver` zeigen verbindlich auf `/opt/wine-devel`; der Image-Preflight verlangt exakt `wine-11.13`.
+- Einen bestehenden Wine-10-Prefix vor dem ersten Wine-11.13-Start vollständig unter `/home/container/.loryvant-backups/wine-prefixes` archiviert.
+- `RESET_WINE_PREFIX=1` wird durch denselben gesicherten Migrationspfad verarbeitet; Welt-, Konfigurations- und Moddaten bleiben außerhalb des Prefixes.
+- Runtime-Smoke-Test simuliert einen Wine-10-Prefix, prüft dessen Erhalt und validiert anschließend den frischen Wine-11.13-Prefixaufbau.
