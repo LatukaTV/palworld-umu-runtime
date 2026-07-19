@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set +e
+/usr/bin/wineboot-stable "$@"
+rc=$?
+prefix="${WINEPREFIX:-${HOME:-/home/container}/.wine}"
+if [[ -s "${prefix}/system.reg" ]]; then
+    if [[ "${rc}" -ne 0 ]]; then
+        printf '[Loryvant] WARNUNG: wineboot meldete Exit %s; der Prefix wurde vollständig erzeugt.\n' "${rc}" >&2
+    fi
+    exit 0
+fi
+exit "${rc}"
