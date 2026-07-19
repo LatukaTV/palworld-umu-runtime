@@ -6,6 +6,8 @@ on:
     paths:
       - Dockerfile
       - scripts/**
+      - MOD_SUPPORT.md
+      - CHANGELOG.md
       - .github/workflows/publish-verified-steamrt4.yml
 
 permissions:
