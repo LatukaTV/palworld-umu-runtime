@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from pathlib import Path
+
+VERSION = "0.2.12"
+CORE = Path("/usr/local/bin/palworld-umu-start-core")
+HOME = Path("/home/container")
+SAVE_ROOT = HOME / "ModdedServer/Pal/Saved"
+SAVE_GAMES = SAVE_ROOT / "SaveGames/0"
+GAME_USER_SETTINGS = SAVE_ROOT / "Config/WindowsServer/GameUserSettings.ini"
+BACKUP_ROOT = HOME / ".loryvant-backups/saves"
+MARKER = SAVE_ROOT / ".loryvant-v0.2.12-backup-tree-reset"
+DEDICATED_NAME = re.compile(r"^\s*DedicatedServerName\s*=\s*([^\r\n]+)", re.I | re.M)
+
+
+def out(message):
+    print(f"[Loryvant] {message}", flush=True)
+
+
+def warn(message):
+    print(f"[Loryvant] WARNUNG: {message}", file=sys.stderr, flush=True)
+
+
+def read_world_name():
+    try:
+        text = GAME_USER_SETTINGS.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        text = ""
+    match = DEDICATED_NAME.search(text)
+    if match:
+        name = match.group(1).strip()
+        candidate = SAVE_GAMES / name
+        if re.fullmatch(r"[A-Za-z0-9_-]+", name) and candidate.is_dir():
+            return name
+    records = []
+    if SAVE_GAMES.is_dir():
+        for path in SAVE_GAMES.iterdir():
+            if not path.is_dir():
+                continue
+            files = [path / "Level.sav", path / "LevelMeta.sav"]
+            existing = [item for item in files if item.is_file()]
+            if existing:
+                records.append((max(item.stat().st_mtime for item in existing), path.name))
+    return max(records)[1] if records else ""
+
+
+def validate_backup_tree(path):
+    local = path / "local"
+    world = path / "world"
+    local.mkdir(parents=True, exist_ok=True)
+    world.mkdir(parents=True, exist_ok=True)
+    source = world / ".loryvant-copy-source.tmp"
+    copied = local / ".loryvant-copy-target.tmp"
+    renamed = local / ".loryvant-copy-final.tmp"
+    try:
+        source.write_bytes(b"loryvant-palworld-save")
+        shutil.copy2(source, copied)
+        os.replace(copied, renamed)
+        if renamed.read_bytes() != b"loryvant-palworld-save":
+            raise OSError("Kopiertest lieferte abweichende Daten")
+    finally:
+        for item in (source, copied, renamed):
+            item.unlink(missing_ok=True)
+
+
+def reset_backup_tree():
+    if MARKER.is_file() and os.environ.get("RESET_WORLD_BACKUP_TREE", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        out("Windows-Backup-Unterbaum wurde für v0.2.12 bereits bereinigt.")
+        return
+    world_name = read_world_name()
+    if not world_name:
+        warn("Backup-Unterbaum bleibt unverändert: aktive Welt wurde noch nicht ermittelt.")
+        return
+    world_root = SAVE_GAMES / world_name
+    backup_tree = world_root / "backup"
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    preserved = ""
+    if backup_tree.exists() or backup_tree.is_symlink():
+        target = BACKUP_ROOT / f"generated-backup-tree-{world_name}-{stamp}"
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        shutil.move(str(backup_tree), str(target))
+        preserved = str(target)
+        out(f"Alter generierter Backup-Unterbaum wurde erhalten: {target}")
+    backup_tree.mkdir(parents=True, exist_ok=True)
+    for path in (backup_tree, backup_tree / "local", backup_tree / "world"):
+        path.chmod(0o755)
+    validate_backup_tree(backup_tree)
+    MARKER.parent.mkdir(parents=True, exist_ok=True)
+    temporary = MARKER.with_suffix(".tmp")
+    temporary.write_text(json.dumps({
+        "version": VERSION,
+        "world": world_name,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "preserved": preserved,
+    }, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, MARKER)
+    out(f"Frischer Windows-Backup-Unterbaum geprüft: {backup_tree}")
+
+
+def self_test():
+    if not CORE.is_file() or not os.access(CORE, os.X_OK):
+        raise SystemExit("palworld-umu-start-core fehlt oder ist nicht ausführbar")
+    out(f"Wrapper-Selbsttest bestanden: v{VERSION}, datenhaltender Backup-Unterbaum-Reset")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    args, rest = parser.parse_known_args()
+    if args.version:
+        print(f"palworld-umu-start {VERSION}")
+        return 0
+    if args.self_test:
+        return self_test()
+    reset_backup_tree()
+    os.execv(str(CORE), [str(CORE), *rest])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
