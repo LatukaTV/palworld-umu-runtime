@@ -15,23 +15,27 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-VERSION = "0.2.9"
+VERSION = "0.2.10"
 HOME = Path("/home/container")
 SERVER_ROOT = HOME / "ModdedServer"
 EXE = SERVER_ROOT / "Pal/Binaries/Win64/PalServer-Win64-Shipping.exe"
 WIN64 = EXE.parent
 PARSER = HOME / "PalworldServerConfigParser"
-DEFAULT_INI = HOME / "DefaultPalWorldSettings.ini"
-SAVE_ROOT = HOME / "Pal/Saved"
+DEFAULT_INI = SERVER_ROOT / "DefaultPalWorldSettings.ini"
+NATIVE_SAVE_ROOT = HOME / "Pal/Saved"
+SAVE_ROOT = SERVER_ROOT / "Pal/Saved"
 SAVE_GAMES = SAVE_ROOT / "SaveGames"
 CONFIG_DIR = SAVE_ROOT / "Config/WindowsServer"
 CONFIG = CONFIG_DIR / "PalWorldSettings.ini"
+GAME_USER_SETTINGS = CONFIG_DIR / "GameUserSettings.ini"
 LINUX_CONFIG = SAVE_ROOT / "Config/LinuxServer/PalWorldSettings.ini"
-SERVER_SAVED = SERVER_ROOT / "Pal/Saved"
-MODS_ROOT = HOME / "Mods"
+LINUX_GAME_USER_SETTINGS = SAVE_ROOT / "Config/LinuxServer/GameUserSettings.ini"
 SERVER_MODS = SERVER_ROOT / "Mods"
+MODS_ROOT = HOME / "Mods"
 BACKUP_ROOT = HOME / ".loryvant-backups"
 MOD_BACKUP_ROOT = BACKUP_ROOT / "mods"
+SAVE_BACKUP_ROOT = BACKUP_ROOT / "saves"
+MIGRATION_MARKER = SAVE_ROOT / ".loryvant-v0.2.10-migrated"
 WINE_PREFIX = HOME / ".wine-palworld-modded"
 LOG_DIR = HOME / "logs/loryvant-palworld-modded"
 XDG_DIR = Path("/tmp/loryvant-wine-xdg")
@@ -43,7 +47,8 @@ REST_HOST = "127.0.0.1"
 READY_TIMEOUT = 300
 REST_TIMEOUT = 3
 SECRET_LINE = re.compile(r"^(.*Password.*(?:value:|with value:)).*$", re.I)
-DLL_CANDIDATES = ("d3d9", "winmm", "version", "xinput1_3", "dxgi")
+DEDICATED_NAME_LINE = re.compile(r"^\s*DedicatedServerName\s*=.*$", re.I | re.M)
+DLL_CANDIDATES = ("d3d9", "dwmapi", "winmm", "version", "xinput1_3", "dxgi")
 
 server = None
 xvfb = None
@@ -99,13 +104,13 @@ def rest_port():
 def prepare_directories():
     for path in (
         SERVER_ROOT,
-        CONFIG_DIR,
-        SAVE_GAMES,
+        SERVER_ROOT / "Pal",
         MODS_ROOT / "Workshop",
         MODS_ROOT / "ManagedMods",
         MODS_ROOT / "NativeMods",
         BACKUP_ROOT,
         MOD_BACKUP_ROOT,
+        SAVE_BACKUP_ROOT,
         WINE_PREFIX.parent,
         LOG_DIR,
     ):
@@ -127,8 +132,7 @@ def replace_with_symlink(path, target, label):
     path.symlink_to(target, target_is_directory=True)
 
 
-def prepare_shared_paths():
-    replace_with_symlink(SERVER_SAVED, SAVE_ROOT, "ModdedServer-Saved")
+def prepare_mod_path():
     replace_with_symlink(SERVER_MODS, MODS_ROOT, "ModdedServer-Mods")
 
 
@@ -145,19 +149,162 @@ def prepare_mod_settings():
     out(f"PalModSettings.ini wurde angelegt: {settings}")
 
 
+def backup_native_saved():
+    if not NATIVE_SAVE_ROOT.is_dir():
+        return None
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    target = SAVE_BACKUP_ROOT / f"native-before-windows-{stamp}.tar.gz"
+    with tarfile.open(target, "w:gz", compresslevel=4) as archive:
+        archive.add(NATIVE_SAVE_ROOT, arcname="Pal/Saved", recursive=True)
+    out(f"Save-Migrationssicherung erstellt: {target}")
+    return target
+
+
+def copy_native_saved():
+    if NATIVE_SAVE_ROOT.is_dir():
+        shutil.copytree(NATIVE_SAVE_ROOT, SAVE_ROOT, dirs_exist_ok=True, symlinks=False)
+        out("Nativer Save-Bestand wurde in den eigenständigen Windows-Save-Pfad übernommen.")
+    else:
+        SAVE_ROOT.mkdir(parents=True, exist_ok=True)
+        out("Eigenständiger Windows-Save-Pfad wurde neu angelegt.")
+
+
+def prepare_independent_saved():
+    migration_required = SAVE_ROOT.is_symlink() or not SAVE_ROOT.exists()
+    if SAVE_ROOT.is_symlink():
+        SAVE_ROOT.unlink()
+        migration_required = True
+    if migration_required:
+        if enabled("SAVE_MIGRATION_BACKUP", "1"):
+            backup_native_saved()
+        copy_native_saved()
+    SAVE_ROOT.mkdir(parents=True, exist_ok=True)
+    if SAVE_ROOT.is_symlink():
+        fail("Windows-Save-Pfad ist weiterhin ein symbolischer Link.", 65)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    (SAVE_GAMES / "0").mkdir(parents=True, exist_ok=True)
+
+
 def migrate_configuration():
     if CONFIG.is_file() and CONFIG.stat().st_size > 0:
         return
-    if LINUX_CONFIG.is_file() and LINUX_CONFIG.stat().st_size > 0:
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        backup = BACKUP_ROOT / f"PalWorldSettings-LinuxServer-{stamp}.ini"
-        shutil.copy2(LINUX_CONFIG, backup)
-        shutil.copy2(LINUX_CONFIG, CONFIG)
-        out("LinuxServer-Konfiguration wurde nach WindowsServer übernommen.")
-        out(f"Konfigurationssicherung: {backup}")
+    candidates = (
+        NATIVE_SAVE_ROOT / "Config/WindowsServer/PalWorldSettings.ini",
+        LINUX_CONFIG,
+        NATIVE_SAVE_ROOT / "Config/LinuxServer/PalWorldSettings.ini",
+        DEFAULT_INI,
+    )
+    for source in candidates:
+        if source.is_file() and source.stat().st_size > 0:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, CONFIG)
+            out(f"WindowsServer-Konfiguration wurde übernommen: {source}")
+            return
+    fail("Keine gültige PalWorldSettings.ini oder Vorlage gefunden.", 47)
+
+
+def read_dedicated_name(path):
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return ""
+    match = re.search(r"^\s*DedicatedServerName\s*=\s*([^\r\n]*)", text, re.I | re.M)
+    return match.group(1).strip() if match else ""
+
+
+def world_candidates():
+    root = SAVE_GAMES / "0"
+    records = []
+    if not root.is_dir():
+        return records
+    for path in root.iterdir():
+        if not path.is_dir():
+            continue
+        level = path / "Level.sav"
+        meta = path / "LevelMeta.sav"
+        if not level.is_file() and not meta.is_file():
+            continue
+        stamp = max((item.stat().st_mtime for item in (level, meta) if item.exists()), default=path.stat().st_mtime)
+        records.append((path.name, stamp))
+    return sorted(records, key=lambda item: item[1], reverse=True)
+
+
+def select_world_name():
+    records = world_candidates()
+    names = {name for name, _ in records}
+    for settings in (
+        GAME_USER_SETTINGS,
+        LINUX_GAME_USER_SETTINGS,
+        NATIVE_SAVE_ROOT / "Config/WindowsServer/GameUserSettings.ini",
+        NATIVE_SAVE_ROOT / "Config/LinuxServer/GameUserSettings.ini",
+    ):
+        preferred = read_dedicated_name(settings)
+        if preferred in names:
+            return preferred
+    if len(records) == 1:
+        return records[0][0]
+    if records:
+        warn(f"Mehrere Welten gefunden; verwende die zuletzt geänderte Welt {records[0][0]}.")
+        return records[0][0]
+    return ""
+
+
+def write_dedicated_name(world_name):
+    if not world_name:
+        warn("Kein bestehender Weltordner mit Level.sav oder LevelMeta.sav gefunden.")
         return
-    shutil.copy2(DEFAULT_INI, CONFIG)
-    out("WindowsServer/PalWorldSettings.ini wurde aus der Vorlage angelegt.")
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    source = None
+    if GAME_USER_SETTINGS.is_file():
+        source = GAME_USER_SETTINGS
+    elif LINUX_GAME_USER_SETTINGS.is_file():
+        source = LINUX_GAME_USER_SETTINGS
+    else:
+        for candidate in (
+            NATIVE_SAVE_ROOT / "Config/WindowsServer/GameUserSettings.ini",
+            NATIVE_SAVE_ROOT / "Config/LinuxServer/GameUserSettings.ini",
+        ):
+            if candidate.is_file():
+                source = candidate
+                break
+    if source is not None and source != GAME_USER_SETTINGS:
+        shutil.copy2(source, GAME_USER_SETTINGS)
+    if GAME_USER_SETTINGS.is_file():
+        text = GAME_USER_SETTINGS.read_text(encoding="utf-8-sig", errors="replace")
+    else:
+        text = "[/Script/Pal.PalGameLocalSettings]\nDedicatedServerName=\n"
+    line = f"DedicatedServerName={world_name}"
+    if DEDICATED_NAME_LINE.search(text):
+        text = DEDICATED_NAME_LINE.sub(line, text, count=1)
+    elif "[/Script/Pal.PalGameLocalSettings]" in text:
+        text = text.replace("[/Script/Pal.PalGameLocalSettings]", f"[/Script/Pal.PalGameLocalSettings]\n{line}", 1)
+    else:
+        text = f"[/Script/Pal.PalGameLocalSettings]\n{line}\n\n{text}"
+    temporary = GAME_USER_SETTINGS.with_suffix(".ini.loryvant.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, GAME_USER_SETTINGS)
+    out(f"Aktive Welt für WindowsServer: {world_name}")
+
+
+def atomic_save_preflight():
+    if SAVE_ROOT.is_symlink():
+        fail("Windows-Save-Pfad darf kein symbolischer Link sein.", 65)
+    probe_root = SAVE_GAMES / "0" / ".loryvant-atomic-save-test"
+    probe_root.mkdir(parents=True, exist_ok=True)
+    source = probe_root / "source.tmp"
+    copied = probe_root / "backup.tmp"
+    final = probe_root / "final.tmp"
+    try:
+        source.write_bytes(b"loryvant-save-test")
+        shutil.copy2(source, copied)
+        os.replace(copied, final)
+        if final.read_bytes() != b"loryvant-save-test":
+            fail("Atomarer Save-Pfadtest lieferte ungültige Daten.", 66)
+    except OSError as exc:
+        fail(f"Atomarer Save-Pfadtest fehlgeschlagen: {exc}", 66)
+    finally:
+        shutil.rmtree(probe_root, ignore_errors=True)
+    out(f"Atomarer Windows-Save-Pfad geprüft: {SAVE_ROOT}")
 
 
 def dll_overrides():
@@ -194,14 +341,8 @@ def environment():
     else:
         env.pop("WINEDLLOVERRIDES", None)
     for key in (
-        "PROTONPATH",
-        "RUNTIMEPATH",
-        "UMU_NO_RUNTIME",
-        "UMU_NO_PROTON",
-        "UMU_CONTAINER_NSENTER",
-        "PROTON_LOG",
-        "PROTON_LOG_DIR",
-        "UMU_LOG",
+        "PROTONPATH", "RUNTIMEPATH", "UMU_NO_RUNTIME", "UMU_NO_PROTON",
+        "UMU_CONTAINER_NSENTER", "PROTON_LOG", "PROTON_LOG_DIR", "UMU_LOG",
         "WAYLAND_DISPLAY",
     ):
         env.pop(key, None)
@@ -233,12 +374,8 @@ def update_server(env):
 def run_parser(env):
     migrate_configuration()
     result = subprocess.run(
-        [str(PARSER)],
-        cwd=HOME,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        [str(PARSER)], cwd=SERVER_ROOT, env=env, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
     output = result.stdout or ""
     for line in output.splitlines():
@@ -246,6 +383,9 @@ def run_parser(env):
         print(f"{match.group(1)} <redacted>" if match else line, flush=True)
     if result.returncode or "INI file updated successfully." not in output:
         fail(f"Config-Parser fehlgeschlagen, Exit {result.returncode}.", 40)
+    expected_path = str(CONFIG.resolve())
+    if f"PalWorldSettings.ini found at: {expected_path}" not in output and "DefaultPalWorldSettings.ini copied to:" not in output:
+        fail(f"Config-Parser verwendete einen unerwarteten Pfad; erwartet: {expected_path}", 67)
     required = (
         "RESTAPIEnabled with value: True",
         f"RESTAPIPort with value: {env['REST_API_PORT']}",
@@ -269,6 +409,8 @@ def prepare_storage():
     writable(SAVE_GAMES, ".loryvant-save-write-test", 42)
     writable(CONFIG_DIR, ".loryvant-config-write-test", 45)
     writable(MODS_ROOT, ".loryvant-mod-write-test", 46)
+    atomic_save_preflight()
+    MIGRATION_MARKER.write_text(f"version={VERSION}\ncreated={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n", encoding="utf-8")
 
 
 def start_xvfb(env):
@@ -281,9 +423,7 @@ def start_xvfb(env):
     handle = X_LOG.open("ab", buffering=0)
     xvfb = subprocess.Popen(
         ["Xvfb", DISPLAY, "-screen", "0", "1024x768x24", "-nolisten", "tcp", "-ac", "-noreset"],
-        env=env,
-        stdout=handle,
-        stderr=subprocess.STDOUT,
+        env=env, stdout=handle, stderr=subprocess.STDOUT,
     )
     handle.close()
     deadline = time.monotonic() + 10
@@ -311,51 +451,28 @@ def prepare_wine_prefix(env):
     log_path = LOG_DIR / "wineboot.log"
     with log_path.open("ab", buffering=0) as handle:
         result = subprocess.run(
-            ["wineboot", "-u"],
-            env=env,
-            cwd=HOME,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            timeout=120,
-            check=False,
+            ["wineboot", "-u"], env=env, cwd=HOME, stdout=handle,
+            stderr=subprocess.STDOUT, timeout=120, check=False,
         )
         wait_result = subprocess.run(
-            ["wineserver", "-w"],
-            env=env,
-            cwd=HOME,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            timeout=120,
-            check=False,
+            ["wineserver", "-w"], env=env, cwd=HOME, stdout=handle,
+            stderr=subprocess.STDOUT, timeout=120, check=False,
         )
     if not (WINE_PREFIX / "system.reg").is_file():
         if log_path.is_file():
             print(log_path.read_text(errors="replace"), file=sys.stderr)
-        fail(
-            f"Wine-Prefix-Initialisierung fehlgeschlagen, wineboot={result.returncode}, wineserver={wait_result.returncode}.",
-            58,
-        )
+        fail(f"Wine-Prefix-Initialisierung fehlgeschlagen, wineboot={result.returncode}, wineserver={wait_result.returncode}.", 58)
     if result.returncode or wait_result.returncode:
-        warn(
-            f"Wine-Prefix wurde erzeugt; wineboot={result.returncode}, wineserver={wait_result.returncode}."
-        )
+        warn(f"Wine-Prefix wurde erzeugt; wineboot={result.returncode}, wineserver={wait_result.returncode}.")
 
 
 def mod_backup_paths():
     candidates = [
-        MODS_ROOT,
-        WIN64 / "PalDefender",
-        WIN64 / "Mods",
-        WIN64 / "UE4SS",
-        WIN64 / "PalDefender.dll",
-        WIN64 / "d3d9.dll",
-        WIN64 / "winmm.dll",
-        WIN64 / "version.dll",
-        WIN64 / "xinput1_3.dll",
-        WIN64 / "dxgi.dll",
-        SERVER_ROOT / "Pal/Content/Paks/LogicMods",
-        SERVER_ROOT / "Pal/Content/Paks/~mods",
-        SERVER_ROOT / "Pal/Content/Paks/~WorkshopMods",
+        MODS_ROOT, WIN64 / "PalDefender", WIN64 / "Mods", WIN64 / "UE4SS",
+        WIN64 / "PalDefender.dll", WIN64 / "d3d9.dll", WIN64 / "dwmapi.dll",
+        WIN64 / "winmm.dll", WIN64 / "version.dll", WIN64 / "xinput1_3.dll",
+        WIN64 / "dxgi.dll", SERVER_ROOT / "Pal/Content/Paks/LogicMods",
+        SERVER_ROOT / "Pal/Content/Paks/~mods", SERVER_ROOT / "Pal/Content/Paks/~WorkshopMods",
     ]
     return [path for path in candidates if path.exists() or path.is_symlink()]
 
@@ -451,7 +568,7 @@ def check_mods():
         problems.append(f"aktive PackageName ohne Info.json: {', '.join(missing)}")
     incompatible = [record["package"] or record["folder"] for record in records if not record["server"]]
     if incompatible:
-        problems.append(f"IsServer=true fehlt oder ist nicht erkennbar: {', '.join(incompatible)}")
+        problems.append(f"IsServer=true fehlt oder ist unklar: {', '.join(incompatible)}")
     broken = [record["folder"] for record in records if record["error"]]
     if broken:
         problems.append(f"ungültige Info.json: {', '.join(broken)}")
@@ -472,9 +589,7 @@ def rest(endpoint, method="GET", payload=None, timeout=REST_TIMEOUT):
         headers["Content-Type"] = "application/json"
     request = Request(
         f"http://{REST_HOST}:{rest_port()}/v1/api/{endpoint.lstrip('/')}",
-        data=data,
-        headers=headers,
-        method=method,
+        data=data, headers=headers, method=method,
     )
     with rest_lock:
         try:
@@ -548,6 +663,8 @@ def console(command):
         print(f"DLL-Mods: {WIN64}", flush=True)
         print(f"UE4SS: {WIN64 / 'UE4SS'}", flush=True)
         print(f"PAK/LogicMods: {SERVER_ROOT / 'Pal/Content/Paks'}", flush=True)
+        print(f"Windows-Saves: {SAVE_ROOT}", flush=True)
+        print(f"Nativer Rückfall-Save: {NATIVE_SAVE_ROOT}", flush=True)
         return
     if name in {"help", "?"}:
         print("Kommandos: mods, modcheck, modbackup, modpaths, info, showplayers, settings, metrics, save, broadcast <Text>, kickplayer <ID> [Text], banplayer <ID> [Text], unbanplayer <ID>, shutdown [Sekunden] [Text], doexit", flush=True)
@@ -615,18 +732,11 @@ def console_worker():
 
 def server_command():
     import shlex
-
     port = os.environ.get("SERVER_PORT", "8211")
     command = [
-        "dbus-run-session",
-        "--",
-        "wine64",
-        str(EXE),
-        "-publiclobby",
-        f"-port={port}",
-        f"-publicport={port}",
-        f"-players={os.environ.get('MAX_PLAYERS', '32')}",
-        "-logformat=text",
+        "dbus-run-session", "--", "wine64", str(EXE), "-publiclobby",
+        f"-port={port}", f"-publicport={port}",
+        f"-players={os.environ.get('MAX_PLAYERS', '32')}", "-logformat=text",
     ]
     public_ip = os.environ.get("PUBLIC_IP", "").strip()
     if public_ip:
@@ -653,6 +763,8 @@ def validate_profile():
         fail("Palworld-Textlogging fehlt.", 1)
     if rest_port() == os.environ.get("SERVER_PORT", "8211"):
         fail("REST_API_PORT kollidiert mit SERVER_PORT.", 1)
+    if SAVE_ROOT == NATIVE_SAVE_ROOT:
+        fail("Windows- und native Save-Pfade sind identisch.", 1)
 
 
 def handle_signal(signum, _frame):
@@ -690,7 +802,7 @@ def preflight():
         need_command(name, 1)
     validate_profile()
     value = subprocess.run(["getconf", "GNU_LIBC_VERSION"], text=True, capture_output=True, check=True).stdout.strip()
-    out(f"Launcher-Selbsttest bestanden: v{VERSION}, Windows-Modserver mit Wine64, {value}, REST-Port {rest_port()}")
+    out(f"Launcher-Selbsttest bestanden: v{VERSION}, Windows-Modserver mit eigenständigem Save-Pfad, {value}, REST-Port {rest_port()}")
     return 0
 
 
@@ -707,7 +819,6 @@ def main():
     for name, code in (("wine64", 43), ("wineboot", 58), ("wineserver", 58), ("Xvfb", 60), ("dbus-run-session", 57)):
         need_command(name, code)
     need_file(PARSER, "PalworldServerConfigParser", 40, True)
-    need_file(DEFAULT_INI, "DefaultPalWorldSettings.ini", 47)
     admin_password()
     validate_profile()
     prepare_directories()
@@ -717,9 +828,14 @@ def main():
     prepare_wine_prefix(env)
     if enabled("MOD_BACKUP_ON_START", "1"):
         create_mod_backup()
+    prepare_independent_saved()
     update_server(env)
     need_file(EXE, "Palworld-Windowsserver", 48)
-    prepare_shared_paths()
+    need_file(DEFAULT_INI, "DefaultPalWorldSettings.ini des Windows-Servers", 47)
+    prepare_mod_path()
+    migrate_configuration()
+    world_name = select_world_name()
+    write_dedicated_name(world_name)
     run_parser(env)
     prepare_storage()
     check_mods()
@@ -730,10 +846,12 @@ def main():
     out(f"Windows-Server: {SERVER_ROOT}")
     out(f"Workshop-Mods: {MODS_ROOT / 'Workshop'}")
     out(f"DLL-Mods: {WIN64}")
-    out(f"Save-Pfad: {SAVE_GAMES}")
+    out(f"Windows-Save-Pfad: {SAVE_ROOT}")
+    out(f"Nativer Rückfall-Save: {NATIVE_SAVE_ROOT}")
+    if world_name:
+        out(f"Geladene Welt: {world_name}")
     out(f"Lokale REST-API: {REST_HOST}:{env['REST_API_PORT']}")
-    overrides = env.get("WINEDLLOVERRIDES", "<keine>")
-    out(f"Wine-DLL-Overrides: {overrides}")
+    out(f"Wine-DLL-Overrides: {env.get('WINEDLLOVERRIDES', '<keine>')}")
     safe_args = [item for item in command[4:] if "password" not in item.lower()]
     out(f"Palworld-Argumente: {' '.join(safe_args)}")
     for sig in (signal.SIGTERM, signal.SIGINT):
