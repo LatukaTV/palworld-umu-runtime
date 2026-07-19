@@ -15,7 +15,7 @@ ENV HOME=/home/container
 ENV USER=container
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
-ENV WINEDLLPATH=/opt/wine-devel/lib/wine
+ENV WINELOADER=/opt/wine-devel/bin/wine
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
@@ -56,8 +56,8 @@ RUN set -eux; \
         tar \
         winbind \
         xvfb; \
-    test "$(/opt/wine-devel/lib/wine/x86_64-unix/wine --version)" = 'wine-11.13'; \
-    test -x /opt/wine-devel/lib/wine/x86_64-unix/wine; \
+    test "$(/opt/wine-devel/bin/wine --version)" = 'wine-11.13'; \
+    test -x /opt/wine-devel/bin/wine; \
     test -x /opt/wine-devel/bin/wineboot; \
     test -x /opt/wine-devel/bin/wineserver; \
     test -e /usr/lib32/libstdc++.so.6; \
@@ -68,7 +68,8 @@ RUN set -eux; \
     dbus-uuidgen --ensure=/etc/machine-id; \
     mkdir -p /var/lib/dbus; \
     ln -sf /etc/machine-id /var/lib/dbus/machine-id; \
-    ln -sf /opt/wine-devel/lib/wine/x86_64-unix/wine /usr/local/bin/wine64; \
+    printf '%s\n' '#!/bin/sh' 'exec /opt/wine-devel/bin/wine "$@"' > /usr/local/bin/wine64; \
+    chmod 0755 /usr/local/bin/wine64; \
     ln -sf /opt/wine-devel/bin/wineserver /usr/local/bin/wineserver; \
     ln -sf /opt/wine-devel/bin/wineboot /usr/local/lib/loryvant/wineboot-real; \
     rm -rf /var/lib/apt/lists/*
