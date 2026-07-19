@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM registry.gitlab.steamos.cloud/steamrt/steamrt4/platform:latest
+FROM registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk:latest
 
 LABEL org.opencontainers.image.title="Palworld UMU Runtime"
 LABEL org.opencontainers.image.description="Pelican Palworld Windows runtime with UMU 1.4.0, GE-Proton11-1 and Steam Linux Runtime 4"
