@@ -153,3 +153,10 @@
 - Der Wrapper wartet zuerst auf die vollständigen 64-Bit-Prefixdateien, beendet anschließend Wineboot und Wineserver kontrolliert und startet erst danach eine neue `cmd.exe`-Probe.
 - Fehlgeschlagene Initialisierungen protokollieren Wineboot-Ausgabe, Probe-Exit und den verbleibenden Prozessstatus.
 - Ein nicht ausführbarer Prefix verliert weiterhin `system.reg`, damit der Kernlauncher den Start abbricht und der nächste Lauf den Prefix gesichert ersetzt.
+
+## 0.1.18 – 2026-07-20
+
+- Neue Prefixe werden mit `wineboot --init` statt über den Aktualisierungspfad aufgebaut.
+- Die Wine-Mono- und Wine-Gecko-Installationsdialoge werden während der headless Prefix-Erstellung mit `WINEDLLOVERRIDES=mscoree,mshtml=` unterdrückt.
+- Der Wrapper wartet jetzt auf das tatsächliche Ende von `wineboot`; erst danach beendet er verbleibende Wine-Prozesse und startet die funktionale `cmd.exe`-Probe.
+- Ein 120-Sekunden-Timeout sichert vor dem Abbruch eine vollständige Prozessliste für die Fehleranalyse.
