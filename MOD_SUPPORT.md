@@ -157,3 +157,9 @@ A fresh prefix is then initialized at:
 ```
 
 The Wine prefix contains runtime registry and compatibility data only. World saves, configuration, Workshop files and manually installed mods remain in their separate persistent paths.
+
+## v0.2.15 clean prefix validation
+
+The runtime no longer executes the Wine64 readiness command while `wineboot` is still creating the prefix. It waits for the required 64-bit files, shuts down the initialization process and Wineserver, and then runs a fresh `cmd.exe` process against the completed prefix.
+
+When this clean restart probe fails, the launcher records the Wineboot output and process state. It removes `system.reg` so the server start stops instead of accepting a prefix that only looks complete on disk. The next launch preserves the failed prefix below `.loryvant-backups/wine-prefixes` before creating a replacement.
