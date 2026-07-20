@@ -7,9 +7,10 @@ kernel64="${prefix}/drive_c/windows/system32/kernel32.dll"
 cmd64="${prefix}/drive_c/windows/system32/cmd.exe"
 boot_log="/tmp/loryvant-wineboot.$$.log"
 probe_log="/tmp/loryvant-wineboot-probe.$$.log"
+process_log="/tmp/loryvant-wineboot-processes.$$.log"
 
 cleanup() {
-    rm -f "${boot_log}" "${probe_log}"
+    rm -f "${boot_log}" "${probe_log}" "${process_log}"
 }
 trap cleanup EXIT
 
@@ -25,16 +26,18 @@ report_missing() {
 
 stop_wine() {
     timeout 15 env WINEPREFIX="${prefix}" wineserver -k >/dev/null 2>&1 || true
-    for _ in $(seq 1 100); do
-        kill -0 "${boot_pid}" >/dev/null 2>&1 || break
-        sleep .1
-    done
-    if kill -0 "${boot_pid}" >/dev/null 2>&1; then
-        kill -TERM "${boot_pid}" >/dev/null 2>&1 || true
-    fi
-    if [[ -z "${boot_rc}" ]]; then
-        wait "${boot_pid}" >/dev/null 2>&1
-        boot_rc=$?
+    if [[ -n "${boot_pid:-}" ]]; then
+        for _ in $(seq 1 100); do
+            kill -0 "${boot_pid}" >/dev/null 2>&1 || break
+            sleep .1
+        done
+        if kill -0 "${boot_pid}" >/dev/null 2>&1; then
+            kill -TERM "${boot_pid}" >/dev/null 2>&1 || true
+        fi
+        if [[ -z "${boot_rc}" ]]; then
+            wait "${boot_pid}" >/dev/null 2>&1
+            boot_rc=$?
+        fi
     fi
     timeout 15 env WINEPREFIX="${prefix}" wineserver -w >/dev/null 2>&1 || true
 }
@@ -52,18 +55,23 @@ probe_prefix() {
     return "${probe_rc}"
 }
 
-/usr/local/lib/loryvant/wineboot-real "$@" >"${boot_log}" 2>&1 &
+boot_args=("$@")
+if [[ ! -s "${system_reg}" ]]; then
+    boot_args=(--init)
+fi
+
+env \
+    WINEPREFIX="${prefix}" \
+    WINEARCH=win64 \
+    WINEDLLOVERRIDES='mscoree,mshtml=' \
+    /usr/local/lib/loryvant/wineboot-real "${boot_args[@]}" \
+    >"${boot_log}" 2>&1 &
 boot_pid=$!
 boot_rc=""
-complete=0
 deadline=$((SECONDS + 120))
 
 while (( SECONDS < deadline )); do
-    if prefix_complete; then
-        complete=1
-        break
-    fi
-    if [[ -z "${boot_rc}" ]] && ! kill -0 "${boot_pid}" >/dev/null 2>&1; then
+    if ! kill -0 "${boot_pid}" >/dev/null 2>&1; then
         wait "${boot_pid}" >/dev/null 2>&1
         boot_rc=$?
         break
@@ -71,13 +79,18 @@ while (( SECONDS < deadline )); do
     sleep .25
 done
 
-if [[ "${complete}" -eq 1 ]]; then
-    sleep 2
+if [[ -z "${boot_rc}" ]]; then
+    ps -eo pid,ppid,stat,comm,args >"${process_log}" 2>&1 || true
+    boot_rc=124
+    stop_wine
+else
+    timeout 30 env WINEPREFIX="${prefix}" wineserver -w >>"${boot_log}" 2>&1 || true
+    timeout 15 env WINEPREFIX="${prefix}" wineserver -k >/dev/null 2>&1 || true
+    timeout 15 env WINEPREFIX="${prefix}" wineserver -w >/dev/null 2>&1 || true
 fi
-stop_wine
 
 probe_rc=1
-if [[ "${complete}" -eq 1 ]] && probe_prefix; then
+if prefix_complete && probe_prefix; then
     exit 0
 fi
 
@@ -86,21 +99,23 @@ if [[ -s "${boot_log}" ]]; then
     printf '[Loryvant] Wineboot-Ausgabe:\n' >&2
     cat "${boot_log}" >&2
 fi
+if [[ -s "${process_log}" ]]; then
+    printf '[Loryvant] Wine-Prozessstatus vor dem erzwungenen Abbruch:\n' >&2
+    cat "${process_log}" >&2
+fi
 if [[ -s "${probe_log}" ]]; then
     printf '[Loryvant] Wine64-Prefix-Probe, Exit %s:\n' "${probe_rc}" >&2
     cat "${probe_log}" >&2
 else
     printf '[Loryvant] Wine64-Prefix-Probe lieferte Exit %s ohne Ausgabe.\n' "${probe_rc}" >&2
 fi
-printf '[Loryvant] Wine-Prozessstatus nach fehlgeschlagener Initialisierung:\n' >&2
-ps -eo pid,ppid,stat,comm,args >&2 || true
 
 if [[ -s "${system_reg}" ]]; then
-    printf '[Loryvant] FEHLER: Wine64-Prefix ist nach sauberem Neustart nicht funktional ausführbar.\n' >&2
+    printf '[Loryvant] FEHLER: Wine64-Prefix ist nach abgeschlossener Initialisierung nicht funktional ausführbar.\n' >&2
     rm -f "${system_reg}"
 fi
 
-if [[ -z "${boot_rc}" || "${boot_rc}" -eq 0 ]]; then
+if [[ "${boot_rc}" -eq 0 ]]; then
     exit 58
 fi
 exit "${boot_rc}"
