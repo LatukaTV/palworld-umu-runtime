@@ -47,11 +47,11 @@ grep -Fq 'EXPECTED_WINE = "wine-11.13"' /usr/local/bin/palworld-umu-start || fai
 grep -Fq 'def wine_prefix_usable()' /usr/local/bin/palworld-umu-start || fail "Funktionaler Wine-Prefix-Test fehlt."
 grep -Fq '["wine64", r"C:\windows\system32\cmd.exe", "/c", "exit", "0"]' /usr/local/bin/palworld-umu-start || fail "Explizite Wine64-Prefix-Startprobe fehlt."
 grep -Fq 'reason = "unusable"' /usr/local/bin/palworld-umu-start || fail "Unbenutzbare Wine-Prefixe werden nicht gesichert."
-grep -Fq 'kernel64="${prefix}/drive_c/windows/system32/kernel32.dll"' /usr/local/bin/wineboot-wrapper || fail "Wine64-Vollständigkeitsprüfung fehlt."
-grep -Fq 'cmd64="${prefix}/drive_c/windows/system32/cmd.exe"' /usr/local/bin/wineboot-wrapper || fail "Wine64-Kommandozeilenprüfung fehlt."
-grep -Fq 'stop_wine' /usr/local/bin/wineboot-wrapper || fail "Wineboot-Abschluss fehlt."
+grep -Fq 'boot_args=(--init)' /usr/local/bin/wineboot-wrapper || fail "Wineboot-Neuinitialisierung fehlt."
+grep -Fq "WINEDLLOVERRIDES='mscoree,mshtml='" /usr/local/bin/wineboot-wrapper || fail "Headless-Mono-/Gecko-Unterdrückung fehlt."
+grep -Fq 'while (( SECONDS < deadline ))' /usr/local/bin/wineboot-wrapper || fail "Wineboot-Abschlusswartezeit fehlt."
+grep -Fq 'Wine-Prozessstatus vor dem erzwungenen Abbruch' /usr/local/bin/wineboot-wrapper || fail "Wineboot-Timeoutdiagnose fehlt."
 grep -Fq 'probe_prefix' /usr/local/bin/wineboot-wrapper || fail "Funktionale Prefix-Prüfung nach Wineboot fehlt."
-grep -Fq 'Wine64-Prefix ist nach sauberem Neustart nicht funktional ausführbar' /usr/local/bin/wineboot-wrapper || fail "Saubere Wine64-Neustartprüfung fehlt."
 grep -Fq 'SAVE_ROOT = SERVER_ROOT / "Pal/Saved"' /usr/local/bin/palworld-umu-start-core || fail "Eigenständiger Windows-Save-Pfad fehlt."
 grep -Fq 'prepare_independent_saved()' /usr/local/bin/palworld-umu-start-core || fail "Save-Migration fehlt."
 grep -Fq 'Aktive Welt für WindowsServer' /usr/local/bin/palworld-umu-start-core || fail "DedicatedServerName-Zuordnung fehlt."
@@ -64,4 +64,4 @@ STARTUP='printf entrypoint-ok' pelican-entrypoint > /tmp/loryvant-entrypoint-tes
 grep -Fq 'entrypoint-ok' /tmp/loryvant-entrypoint-test.txt || fail "Entrypoint-Test fehlgeschlagen."
 rm -f /tmp/loryvant-entrypoint-test.txt
 
-printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, sauberer Wineboot-Abschluss, funktionaler Wine64-Neustart, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
+printf '\n[image-preflight] OK: Debian 13, WineHQ 11.13, headless Wineboot-Initialisierung, funktionaler Wine64-Prefix, Xvfb, D-Bus, Save-Pfad und Entrypoint geprüft.\n'
