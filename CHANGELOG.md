@@ -146,3 +146,10 @@
 - Einen bestehenden Wine-10-Prefix vor dem ersten Wine-11.13-Start vollständig unter `/home/container/.loryvant-backups/wine-prefixes` archiviert.
 - `RESET_WINE_PREFIX=1` wird durch denselben gesicherten Migrationspfad verarbeitet; Welt-, Konfigurations- und Moddaten bleiben außerhalb des Prefixes.
 - Runtime-Smoke-Test simuliert einen Wine-10-Prefix, prüft dessen Erhalt und validiert anschließend den frischen Wine-11.13-Prefixaufbau.
+
+## 0.1.17 – 2026-07-20
+
+- Die funktionale Wine64-Probe aus der laufenden `wineboot`-Initialisierung entfernt.
+- Der Wrapper wartet zuerst auf die vollständigen 64-Bit-Prefixdateien, beendet anschließend Wineboot und Wineserver kontrolliert und startet erst danach eine neue `cmd.exe`-Probe.
+- Fehlgeschlagene Initialisierungen protokollieren Wineboot-Ausgabe, Probe-Exit und den verbleibenden Prozessstatus.
+- Ein nicht ausführbarer Prefix verliert weiterhin `system.reg`, damit der Kernlauncher den Start abbricht und der nächste Lauf den Prefix gesichert ersetzt.
