@@ -163,3 +163,9 @@ The Wine prefix contains runtime registry and compatibility data only. World sav
 The runtime no longer executes the Wine64 readiness command while `wineboot` is still creating the prefix. It waits for the required 64-bit files, shuts down the initialization process and Wineserver, and then runs a fresh `cmd.exe` process against the completed prefix.
 
 When this clean restart probe fails, the launcher records the Wineboot output and process state. It removes `system.reg` so the server start stops instead of accepting a prefix that only looks complete on disk. The next launch preserves the failed prefix below `.loryvant-backups/wine-prefixes` before creating a replacement.
+
+## v0.2.15 headless initialization
+
+A new prefix uses `wineboot --init`. During this one-time initialization, the runtime sets `WINEDLLOVERRIDES=mscoree,mshtml=` so hidden Wine Mono or Gecko installer dialogs cannot block the headless container.
+
+The wrapper waits for `wineboot` itself to finish before it performs the Wine64 command probe. A timeout captures the active process list, terminates the incomplete Wine session and forces the normal secured prefix-recovery path on the next launch.
